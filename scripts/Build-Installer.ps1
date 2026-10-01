@@ -6,8 +6,8 @@ param(
 
 $ErrorActionPreference = 'Stop'
 $repoRoot = [IO.Path]::GetFullPath((Join-Path $PSScriptRoot '..'))
-if ([string]::IsNullOrWhiteSpace($PortableArchive)) { $PortableArchive = Join-Path $repoRoot '.artifacts\release\v1.0.0\BunkerTidyUpTrainer-1.0.0-Portable.zip' }
-if ([string]::IsNullOrWhiteSpace($OutputPath)) { $OutputPath = Join-Path $repoRoot '.artifacts\release\v1.0.0\BunkerTidyUpTrainer-1.0.0-Setup.exe' }
+if ([string]::IsNullOrWhiteSpace($PortableArchive)) { $PortableArchive = Join-Path $repoRoot '.artifacts\release\v1.0.1\BunkerTidyUpTrainer-1.0.1-Portable.zip' }
+if ([string]::IsNullOrWhiteSpace($OutputPath)) { $OutputPath = Join-Path $repoRoot '.artifacts\release\v1.0.1\BunkerTidyUpTrainer-1.0.1-Setup.exe' }
 $PortableArchive = [IO.Path]::GetFullPath($PortableArchive)
 $OutputPath = [IO.Path]::GetFullPath($OutputPath)
 if (-not (Test-Path -LiteralPath $PortableArchive -PathType Leaf)) { throw ('找不到便携发行包：' + $PortableArchive) }

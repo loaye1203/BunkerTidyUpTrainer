@@ -10,9 +10,9 @@ using System.Windows.Forms;
 
 [assembly: AssemblyTitle("Bunker Tidy Up Trainer Setup")]
 [assembly: AssemblyProduct("Bunker Tidy Up Trainer")]
-[assembly: AssemblyVersion("1.0.0.0")]
-[assembly: AssemblyFileVersion("1.0.0.0")]
-[assembly: AssemblyInformationalVersion("1.0.0")]
+[assembly: AssemblyVersion("1.0.1.0")]
+[assembly: AssemblyFileVersion("1.0.1.0")]
+[assembly: AssemblyInformationalVersion("1.0.1")]
 
 namespace BunkerTidyUpTrainerSetup
 {
@@ -20,7 +20,8 @@ namespace BunkerTidyUpTrainerSetup
     {
         private const string ProductName = "Bunker Tidy Up Trainer";
         private const string InstallMarker = ".bunker-tidy-up-trainer-install";
-        private const string Version = "1.0.0";
+        private const string Version = "1.0.1";
+        private static readonly string[] UpgradeableVersions = { "1.0.0", "1.0.1" };
         private const string PackageResource = "PortablePackage.zip";
 
         [STAThread]
@@ -67,7 +68,8 @@ namespace BunkerTidyUpTrainerSetup
             if (Directory.Exists(targetRoot) && Directory.EnumerateFileSystemEntries(targetRoot).Any())
             {
                 var marker = Path.Combine(targetRoot, InstallMarker);
-                if (!File.Exists(marker) || !File.ReadAllText(marker, Encoding.UTF8).Trim().Equals(Version, StringComparison.Ordinal))
+                var installedVersion = File.Exists(marker) ? File.ReadAllText(marker, Encoding.UTF8).Trim() : string.Empty;
+                if (!UpgradeableVersions.Contains(installedVersion, StringComparer.Ordinal))
                     throw new InvalidOperationException("目标目录已有非本安装器管理的文件，为避免覆盖其他内容，安装已停止：" + targetRoot);
             }
 
@@ -110,7 +112,7 @@ namespace BunkerTidyUpTrainerSetup
                 if (createShortcuts) CreateShortcuts(targetRoot);
                 if (selfTest)
                 {
-                    var testReport = "PASS\r\nVersion=1.0.0\r\nController=" + FileVersion(Path.Combine(targetRoot, "BunkerTidyUpTrainer.exe")) +
+                    var testReport = "PASS\r\nVersion=1.0.1\r\nController=" + FileVersion(Path.Combine(targetRoot, "BunkerTidyUpTrainer.exe")) +
                         "\r\nPlugin=" + FileVersion(Path.Combine(targetRoot, "Payload", "BepInEx", "plugins", "BunkerTidyUpTrainer", "BunkerTidyUp.Mod.dll")) +
                         "\r\nPayload=BepInEx 5.4.23.5\r\n";
                     File.WriteAllText(Path.Combine(targetRoot, "installer-self-test.txt"), testReport, new UTF8Encoding(false));
@@ -131,9 +133,9 @@ namespace BunkerTidyUpTrainerSetup
             if (!File.Exists(controller) || !File.Exists(plugin) || !File.Exists(shared) || !File.Exists(proxy))
                 throw new InvalidDataException("便携包缺少控制器、插件或 BepInEx 启动文件。");
             if (!FileVersion(controller).Contains(Version))
-                throw new InvalidDataException("控制器文件版本不是 1.0.0。");
+                throw new InvalidDataException("控制器文件版本不是 1.0.1。");
             if (!FileVersion(plugin).Contains(Version))
-                throw new InvalidDataException("插件文件版本不是 1.0.0。");
+                throw new InvalidDataException("插件文件版本不是 1.0.1。");
             if (!File.Exists(Path.Combine(root, "LICENSE")) || !File.Exists(Path.Combine(root, "THIRD-PARTY-NOTICES.md")) ||
                 !File.Exists(Path.Combine(root, "验证报告.md")))
                 throw new InvalidDataException("便携包缺少许可证或验证说明。");

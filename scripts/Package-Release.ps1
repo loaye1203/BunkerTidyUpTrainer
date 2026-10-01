@@ -8,7 +8,7 @@ param(
 
 $ErrorActionPreference = 'Stop'
 $repoRoot = [IO.Path]::GetFullPath((Join-Path $PSScriptRoot '..'))
-if ([string]::IsNullOrWhiteSpace($OutputRoot)) { $OutputRoot = Join-Path $repoRoot '.artifacts\release\v1.0.0' }
+if ([string]::IsNullOrWhiteSpace($OutputRoot)) { $OutputRoot = Join-Path $repoRoot '.artifacts\release\v1.0.1' }
 if ([string]::IsNullOrWhiteSpace($BuildRoot)) { $BuildRoot = Join-Path $repoRoot '.artifacts\build' }
 if ([string]::IsNullOrWhiteSpace($BepInExRoot)) { $BepInExRoot = Join-Path $repoRoot '.artifacts\cache\BepInEx-5.4.23.5' }
 if ([string]::IsNullOrWhiteSpace($DotNetLicenseRoot)) { $DotNetLicenseRoot = Join-Path $repoRoot '.artifacts\dotnet-licenses' }
@@ -47,7 +47,8 @@ Copy-Item -LiteralPath (Join-Path $pluginRoot 'Trainer.Shared.dll') -Destination
 Copy-Item -LiteralPath (Join-Path $repoRoot 'README.md') -Destination $portableStage
 Copy-Item -LiteralPath (Join-Path $repoRoot 'LICENSE') -Destination $portableStage
 Copy-Item -LiteralPath (Join-Path $repoRoot 'THIRD-PARTY-NOTICES.md') -Destination $portableStage
-Copy-Item -LiteralPath (Join-Path $repoRoot 'docs\验证报告-1.0.0.md') -Destination (Join-Path $portableStage '验证报告.md')
+Copy-Item -LiteralPath (Join-Path $repoRoot 'docs\验证报告-1.0.1.md') -Destination (Join-Path $portableStage '验证报告.md')
+Copy-Item -LiteralPath (Join-Path $repoRoot 'docs\release-notes-1.0.1.md') -Destination (Join-Path $portableStage '发行说明.md')
 $packageLicenses = Join-Path $portableStage 'licenses'
 $packageImage = Join-Path $portableStage 'docs\assets'
 New-Item -ItemType Directory -Force -Path $packageLicenses, $packageImage | Out-Null
@@ -59,7 +60,7 @@ Copy-Item -LiteralPath (Join-Path $repoRoot 'docs\assets\trainer-ui.png') -Desti
 
 $metadata = [ordered]@{
     product = 'Bunker Tidy Up Trainer'
-    version = '1.0.0'
+    version = '1.0.1'
     platform = 'Windows x64'
     gameRuntime = 'Unity Mono 6000.0.59f2'
     loader = 'BepInEx 5.4.23.5'
@@ -68,7 +69,24 @@ $metadata = [ordered]@{
 }
 $metadata | ConvertTo-Json -Depth 4 | Set-Content -LiteralPath (Join-Path $portableStage 'release-metadata.json') -Encoding UTF8
 
-$archiveName = 'BunkerTidyUpTrainer-1.0.0-Portable.zip'
+$archiveName = 'BunkerTidyUpTrainer-1.0.1-Portable.zip'
 $archivePath = Join-Path $OutputRoot $archiveName
-Compress-Archive -Path (Join-Path $portableStage '*') -DestinationPath $archivePath -CompressionLevel Optimal
+Add-Type -AssemblyName System.IO.Compression
+$archiveStream = [IO.File]::Open($archivePath, [IO.FileMode]::CreateNew, [IO.FileAccess]::ReadWrite, [IO.FileShare]::None)
+$zipArchive = $null
+try {
+    $zipArchive = [IO.Compression.ZipArchive]::new($archiveStream, [IO.Compression.ZipArchiveMode]::Create, $false)
+    Get-ChildItem -LiteralPath $portableStage -File -Recurse -Force | ForEach-Object {
+        $relativePath = [IO.Path]::GetRelativePath($portableStage, $_.FullName).Replace('\', '/')
+        $entry = $zipArchive.CreateEntry($relativePath, [IO.Compression.CompressionLevel]::Optimal)
+        $source = [IO.File]::OpenRead($_.FullName)
+        $destination = $entry.Open()
+        try { $source.CopyTo($destination) }
+        finally { $destination.Dispose(); $source.Dispose() }
+    }
+}
+finally {
+    if ($null -ne $zipArchive) { $zipArchive.Dispose() }
+    $archiveStream.Dispose()
+}
 Write-Host ('便携包已生成：' + $archivePath)

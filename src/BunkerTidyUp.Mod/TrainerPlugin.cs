@@ -10,7 +10,7 @@ using UnityEngine;
 
 namespace BunkerTidyUp.Mod
 {
-    [BepInPlugin("com.codex.bunkertidyuptool", "Bunker Tidy Up Trainer", "1.0.0")]
+    [BepInPlugin("com.codex.bunkertidyuptool", "Bunker Tidy Up Trainer", "1.0.1")]
     public sealed class TrainerPlugin : BaseUnityPlugin
     {
         internal static TrainerPlugin Instance = null!;
@@ -62,7 +62,7 @@ namespace BunkerTidyUp.Mod
             {
                 State = "loaded",
                 Message = "插件已加载，正在检查游戏接口",
-                PluginVersion = "1.0.0",
+                PluginVersion = "1.0.1",
                 GameVersion = GameVersion,
                 Slot = RuntimeBridge.GetSaveSlot(),
                 RestoreSaved = previousStatus?.RestoreSaved ?? false,
@@ -225,7 +225,7 @@ namespace BunkerTidyUp.Mod
             {
                 Status.UpdatedUtc = DateTime.UtcNow;
                 Status.GameVersion = GameVersion;
-                Status.PluginVersion = "1.0.0";
+                Status.PluginVersion = "1.0.1";
                 JsonFile.WriteAtomic(StatusPath, Status);
             }
             catch (Exception ex)

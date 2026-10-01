@@ -1,4 +1,4 @@
-name: Build and publish v1.0.0
+name: Build and publish v1.0.1
 
 on:
   push:
@@ -10,7 +10,7 @@ permissions:
   contents: write
 
 concurrency:
-  group: bunker-tidy-up-trainer-v1.0.0-release
+  group: bunker-tidy-up-trainer-v1.0.1-release
   cancel-in-progress: false
 
 jobs:
@@ -34,17 +34,17 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          $tag = 'v1.0.0'
+          $tag = 'v1.0.1'
           gh release view $tag --repo $env:GITHUB_REPOSITORY 2>$null
           if ($LASTEXITCODE -eq 0) {
             Write-Host "Release $tag already exists; refusing to replace or upload over it."
             exit 0
           }
 
-          $releaseDir = Join-Path $env:GITHUB_WORKSPACE '.artifacts\release\v1.0.0'
+          $releaseDir = Join-Path $env:GITHUB_WORKSPACE '.artifacts\release\v1.0.1'
           $assets = @(
-            (Join-Path $releaseDir 'BunkerTidyUpTrainer-1.0.0-Setup.exe'),
-            (Join-Path $releaseDir 'BunkerTidyUpTrainer-1.0.0-Portable.zip'),
+            (Join-Path $releaseDir 'BunkerTidyUpTrainer-1.0.1-Setup.exe'),
+            (Join-Path $releaseDir 'BunkerTidyUpTrainer-1.0.1-Portable.zip'),
             (Join-Path $releaseDir 'SHA256SUMS.txt'),
             (Join-Path $releaseDir 'release-metadata.json')
           )
@@ -52,5 +52,5 @@ jobs:
             if (-not (Test-Path -LiteralPath $asset -PathType Leaf)) { throw "Missing release asset: $asset" }
           }
           gh release create $tag @assets --repo $env:GITHUB_REPOSITORY --target $env:GITHUB_SHA `
-            --title 'Bunker Tidy Up Trainer 1.0.0' --notes-file (Join-Path $env:GITHUB_WORKSPACE 'docs\release-notes-1.0.0.md')
+            --title 'Bunker Tidy Up Trainer 1.0.1' --notes-file (Join-Path $env:GITHUB_WORKSPACE 'docs\release-notes-1.0.1.md')
           if ($LASTEXITCODE -ne 0) { throw 'GitHub Release creation failed.' }
