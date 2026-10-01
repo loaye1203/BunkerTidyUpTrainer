@@ -1,0 +1,183 @@
+<Window x:Class="BunkerTidyUpTrainer.Controller.MainWindow"
+        xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        Title="Bunker Tidy Up · 游戏增强工具" Height="920" Width="1180" MinHeight="820" MinWidth="1120"
+        WindowStartupLocation="CenterScreen" Background="{StaticResource PaperBrush}">
+  <Window.Resources>
+    <Style TargetType="Button">
+      <Setter Property="Foreground" Value="White" />
+      <Setter Property="Background" Value="{StaticResource ForestBrush}" />
+      <Setter Property="BorderThickness" Value="0" />
+      <Setter Property="Padding" Value="16,10" />
+      <Setter Property="FontSize" Value="14" />
+      <Setter Property="FontWeight" Value="SemiBold" />
+      <Setter Property="Cursor" Value="Hand" />
+      <Setter Property="Template">
+        <Setter.Value>
+          <ControlTemplate TargetType="Button">
+            <Border x:Name="ButtonBorder" Background="{TemplateBinding Background}" CornerRadius="9" Padding="{TemplateBinding Padding}">
+              <ContentPresenter HorizontalAlignment="Center" VerticalAlignment="Center" TextElement.Foreground="{TemplateBinding Foreground}" />
+            </Border>
+            <ControlTemplate.Triggers>
+              <Trigger Property="IsMouseOver" Value="True"><Setter TargetName="ButtonBorder" Property="Opacity" Value="0.88" /></Trigger>
+              <Trigger Property="IsEnabled" Value="False"><Setter TargetName="ButtonBorder" Property="Opacity" Value="0.45" /></Trigger>
+            </ControlTemplate.Triggers>
+          </ControlTemplate>
+        </Setter.Value>
+      </Setter>
+    </Style>
+    <Style x:Key="RowSwitch" TargetType="CheckBox" BasedOn="{StaticResource TrainerCheck}">
+      <Setter Property="Content" Value="" />
+      <Setter Property="HorizontalAlignment" Value="Right" />
+      <Setter Property="VerticalAlignment" Value="Center" />
+      <Setter Property="Margin" Value="0" />
+    </Style>
+    <Style x:Key="DangerSwitch" TargetType="CheckBox" BasedOn="{StaticResource RowSwitch}">
+      <Setter Property="HorizontalAlignment" Value="Right" />
+    </Style>
+  </Window.Resources>
+  <ScrollViewer VerticalScrollBarVisibility="Auto">
+    <Grid Margin="40,30" Width="1040" HorizontalAlignment="Center">
+      <Grid.RowDefinitions>
+        <RowDefinition Height="Auto" />
+        <RowDefinition Height="Auto" />
+        <RowDefinition Height="Auto" />
+        <RowDefinition Height="Auto" />
+        <RowDefinition Height="Auto" />
+        <RowDefinition Height="Auto" />
+      </Grid.RowDefinitions>
+
+      <Grid Grid.Row="0" Margin="0,0,0,22">
+        <StackPanel>
+          <TextBlock Text="BUNKER TIDY UP" FontSize="13" FontWeight="Bold" Foreground="{StaticResource ForestLightBrush}" />
+          <TextBlock Text="游戏增强工具" FontSize="36" FontWeight="Bold" Margin="0,2,0,0" Foreground="{StaticResource ForestBrush}" />
+        </StackPanel>
+        <Border HorizontalAlignment="Right" VerticalAlignment="Center" Background="#E3EADF" CornerRadius="18" Padding="12,7">
+          <StackPanel Orientation="Horizontal">
+            <Ellipse x:Name="StatusDot" Width="8" Height="8" Fill="#8B948C" Margin="0,0,8,0" />
+            <TextBlock x:Name="TopStatusText" Text="等待插件" FontWeight="SemiBold" Foreground="{StaticResource ForestBrush}" />
+          </StackPanel>
+        </Border>
+      </Grid>
+
+      <Grid Grid.Row="1" Margin="0,0,0,8">
+        <Grid.ColumnDefinitions><ColumnDefinition Width="Auto" /><ColumnDefinition Width="*" /></Grid.ColumnDefinitions>
+        <TextBlock Text="常规增强" FontSize="22" FontWeight="Bold" Foreground="{StaticResource ForestBrush}" Margin="0,0,18,0" />
+        <Border Grid.Column="1" Height="1" Background="#CFCFC4" VerticalAlignment="Center" />
+      </Grid>
+
+      <Border Grid.Row="2" Background="{StaticResource CardBrush}" BorderBrush="#DDD9CE" BorderThickness="0,1,0,1" Margin="0,0,0,18">
+        <Grid>
+          <Grid.RowDefinitions>
+            <RowDefinition Height="78" /><RowDefinition Height="78" /><RowDefinition Height="78" /><RowDefinition Height="78" /><RowDefinition Height="78" /><RowDefinition Height="78" />
+          </Grid.RowDefinitions>
+          <Grid Grid.Row="0" Margin="6,0">
+            <Grid.ColumnDefinitions><ColumnDefinition Width="72" /><ColumnDefinition Width="*" /><ColumnDefinition Width="78" /></Grid.ColumnDefinitions>
+            <TextBlock Text="⬡" FontFamily="Segoe UI Symbol" FontSize="38" Foreground="{StaticResource ForestBrush}" VerticalAlignment="Center" HorizontalAlignment="Center" />
+            <StackPanel Grid.Column="1" VerticalAlignment="Center"><TextBlock Text="携带容量等级扩展" FontSize="18" FontWeight="Bold" Foreground="{StaticResource ForestBrush}" /><TextBlock Text="开放更多容量升级" FontSize="14" Foreground="#7A827C" Margin="0,2,0,0" /></StackPanel>
+            <CheckBox x:Name="CarryCheck" Grid.Column="2" Style="{StaticResource RowSwitch}" Checked="SettingChanged" Unchecked="SettingChanged" />
+          </Grid>
+          <Border Grid.Row="0" Height="1" Background="#E3E1D9" VerticalAlignment="Bottom" />
+          <Grid Grid.Row="1" Margin="6,0">
+            <Grid.ColumnDefinitions><ColumnDefinition Width="72" /><ColumnDefinition Width="*" /><ColumnDefinition Width="78" /></Grid.ColumnDefinitions>
+            <TextBlock Text="⌁" FontFamily="Segoe UI Symbol" FontSize="42" Foreground="{StaticResource ForestBrush}" VerticalAlignment="Center" HorizontalAlignment="Center" />
+            <StackPanel Grid.Column="1" VerticalAlignment="Center"><TextBlock Text="自动吸取等级扩展" FontSize="18" FontWeight="Bold" Foreground="{StaticResource ForestBrush}" /><TextBlock Text="开放更多吸取升级" FontSize="14" Foreground="#7A827C" Margin="0,2,0,0" /></StackPanel>
+            <CheckBox x:Name="PullCheck" Grid.Column="2" Style="{StaticResource RowSwitch}" Checked="SettingChanged" Unchecked="SettingChanged" />
+          </Grid>
+          <Border Grid.Row="1" Height="1" Background="#E3E1D9" VerticalAlignment="Bottom" />
+          <Grid Grid.Row="2" Margin="6,0">
+            <Grid.ColumnDefinitions><ColumnDefinition Width="72" /><ColumnDefinition Width="*" /><ColumnDefinition Width="78" /></Grid.ColumnDefinitions>
+            <TextBlock Text="▣" FontFamily="Segoe UI Symbol" FontSize="36" Foreground="{StaticResource ForestBrush}" VerticalAlignment="Center" HorizontalAlignment="Center" />
+            <StackPanel Grid.Column="1" VerticalAlignment="Center"><TextBlock Text="各归其位等级扩展" FontSize="18" FontWeight="Bold" Foreground="{StaticResource ForestBrush}" /><TextBlock Text="开放更多投放升级" FontSize="14" Foreground="#7A827C" Margin="0,2,0,0" /></StackPanel>
+            <CheckBox x:Name="SortCheck" Grid.Column="2" Style="{StaticResource RowSwitch}" Checked="SettingChanged" Unchecked="SettingChanged" />
+          </Grid>
+          <Border Grid.Row="2" Height="1" Background="#E3E1D9" VerticalAlignment="Bottom" />
+          <Grid Grid.Row="3" Margin="6,0">
+            <Grid.ColumnDefinitions><ColumnDefinition Width="72" /><ColumnDefinition Width="*" /><ColumnDefinition Width="78" /></Grid.ColumnDefinitions>
+            <TextBlock Text="◴" FontFamily="Segoe UI Symbol" FontSize="38" Foreground="{StaticResource ForestBrush}" VerticalAlignment="Center" HorizontalAlignment="Center" />
+            <StackPanel Grid.Column="1" VerticalAlignment="Center"><TextBlock Text="连续放置等级扩展" FontSize="18" FontWeight="Bold" Foreground="{StaticResource ForestBrush}" /><TextBlock Text="开放更多放置速度升级" FontSize="14" Foreground="#7A827C" Margin="0,2,0,0" /></StackPanel>
+            <CheckBox x:Name="RepeatCheck" Grid.Column="2" Style="{StaticResource RowSwitch}" Checked="SettingChanged" Unchecked="SettingChanged" />
+          </Grid>
+          <Border Grid.Row="3" Height="1" Background="#E3E1D9" VerticalAlignment="Bottom" />
+          <Grid Grid.Row="4" Margin="6,0">
+            <Grid.ColumnDefinitions><ColumnDefinition Width="72" /><ColumnDefinition Width="*" /><ColumnDefinition Width="78" /></Grid.ColumnDefinitions>
+            <TextBlock Text="☆" FontFamily="Segoe UI Symbol" FontSize="42" Foreground="{StaticResource ForestBrush}" VerticalAlignment="Center" HorizontalAlignment="Center" />
+            <StackPanel Grid.Column="1" VerticalAlignment="Center"><TextBlock Text="更多星星" FontSize="18" FontWeight="Bold" Foreground="{StaticResource ForestBrush}" /><TextBlock Text="前半程20星，后半程逐步增至44星" FontSize="14" Foreground="#7A827C" Margin="0,2,0,0" /></StackPanel>
+            <CheckBox x:Name="StarsCheck" Grid.Column="2" Style="{StaticResource RowSwitch}" Checked="SettingChanged" Unchecked="SettingChanged" />
+          </Grid>
+          <Border Grid.Row="4" Height="1" Background="#E3E1D9" VerticalAlignment="Bottom" />
+          <Grid Grid.Row="5" Margin="6,0">
+            <Grid.ColumnDefinitions><ColumnDefinition Width="72" /><ColumnDefinition Width="*" /><ColumnDefinition Width="78" /></Grid.ColumnDefinitions>
+            <TextBlock Text="⤵" FontFamily="Segoe UI Symbol" FontSize="38" Foreground="{StaticResource ForestBrush}" VerticalAlignment="Center" HorizontalAlignment="Center" />
+            <StackPanel Grid.Column="1" VerticalAlignment="Center"><TextBlock Text="按住连续丢弃" FontSize="18" FontWeight="Bold" Foreground="{StaticResource ForestBrush}" /><TextBlock Text="按住原版丢弃键，按8件/秒丢弃" FontSize="14" Foreground="#7A827C" Margin="0,2,0,0" /></StackPanel>
+            <CheckBox x:Name="DropHoldCheck" Grid.Column="2" Style="{StaticResource RowSwitch}" Checked="SettingChanged" Unchecked="SettingChanged" />
+          </Grid>
+        </Grid>
+      </Border>
+
+      <Border Grid.Row="3" Background="#FCE9D9" BorderBrush="#F2D1B7" BorderThickness="1" CornerRadius="16" Padding="20" Margin="0,0,0,18">
+        <Grid>
+          <Grid.RowDefinitions><RowDefinition Height="Auto" /><RowDefinition Height="Auto" /></Grid.RowDefinitions>
+          <StackPanel Orientation="Horizontal" VerticalAlignment="Center">
+            <TextBlock Text="⚠" FontSize="30" FontWeight="Bold" Foreground="#E66F22" Margin="0,0,16,0" />
+            <TextBlock Text="严重影响游戏体验" FontSize="23" FontWeight="Bold" Foreground="#B85B20" VerticalAlignment="Center" />
+          </StackPanel>
+          <Grid Grid.Row="1" Margin="0,14,0,0">
+            <Grid.ColumnDefinitions><ColumnDefinition Width="*" /><ColumnDefinition Width="1" /><ColumnDefinition Width="*" /><ColumnDefinition Width="1" /><ColumnDefinition Width="*" /></Grid.ColumnDefinitions>
+            <StackPanel Grid.Column="0" VerticalAlignment="Center">
+              <Button x:Name="InfiniteButton" Content="★  开启无限星星" Background="{StaticResource OrangeBrush}" Click="InfiniteButton_Click" HorizontalAlignment="Stretch" />
+              <TextBlock x:Name="InfiniteText" Text="消费仍保留真实余额。" FontSize="11" Foreground="#835D46" HorizontalAlignment="Center" Margin="0,6,0,0" />
+            </StackPanel>
+            <Border Grid.Column="1" Background="#EDC8AA" Margin="18,0" />
+            <Grid Grid.Column="2" Margin="18,0">
+              <Grid.ColumnDefinitions><ColumnDefinition Width="*" /><ColumnDefinition Width="48" /></Grid.ColumnDefinitions>
+              <StackPanel Orientation="Horizontal" VerticalAlignment="Center"><TextBlock Text="⚙" FontSize="27" Foreground="{StaticResource ForestBrush}" Margin="0,0,12,0" /><TextBlock Text="技能无冷却" FontSize="16" FontWeight="SemiBold" Foreground="{StaticResource ForestBrush}" VerticalAlignment="Center" /></StackPanel>
+              <CheckBox x:Name="CooldownCheck" Grid.Column="1" Style="{StaticResource DangerSwitch}" Checked="SettingChanged" Unchecked="SettingChanged" />
+            </Grid>
+            <Border Grid.Column="3" Background="#EDC8AA" Margin="18,0" />
+            <Grid Grid.Column="4" Margin="18,0">
+              <Grid.ColumnDefinitions><ColumnDefinition Width="*" /><ColumnDefinition Width="48" /></Grid.ColumnDefinitions>
+              <StackPanel Orientation="Horizontal" VerticalAlignment="Center"><TextBlock Text="⇈" FontSize="30" Foreground="{StaticResource ForestBrush}" Margin="0,0,12,0" /><TextBlock Text="一键升满" FontSize="16" FontWeight="SemiBold" Foreground="{StaticResource ForestBrush}" VerticalAlignment="Center" /></StackPanel>
+              <CheckBox x:Name="MaxAllCheck" Grid.Column="1" Style="{StaticResource DangerSwitch}" Checked="SettingChanged" Unchecked="SettingChanged" />
+            </Grid>
+          </Grid>
+        </Grid>
+      </Border>
+
+      <Border Grid.Row="4" Background="#FFFDF8" BorderBrush="#DDD9CE" BorderThickness="1" CornerRadius="12" Padding="16" Margin="0,0,0,12">
+        <Grid>
+          <Grid.ColumnDefinitions><ColumnDefinition Width="*" /><ColumnDefinition Width="Auto" /></Grid.ColumnDefinitions>
+          <StackPanel>
+            <TextBlock Text="真实状态" FontSize="16" FontWeight="Bold" Foreground="{StaticResource ForestBrush}" />
+            <TextBlock x:Name="PluginStateText" Text="尚未检测到游戏插件。" Margin="0,5,0,0" FontSize="13" TextWrapping="Wrap" />
+            <TextBlock x:Name="PluginDetailsText" Text="" Margin="0,4,0,0" FontSize="11" Foreground="#788178" TextWrapping="Wrap" />
+          </StackPanel>
+          <Button x:Name="RefreshButton" Grid.Column="1" Content="刷新状态" Click="RefreshButton_Click" VerticalAlignment="Center" />
+        </Grid>
+      </Border>
+
+      <Expander Grid.Row="5" Header="安装、游戏路径与恢复" Foreground="{StaticResource ForestBrush}" FontSize="15" FontWeight="Bold" IsExpanded="False">
+        <Border Background="#FFFDF8" BorderBrush="#DDD9CE" BorderThickness="1" CornerRadius="12" Padding="16" Margin="0,10,0,18">
+          <Grid>
+            <Grid.RowDefinitions><RowDefinition Height="Auto" /><RowDefinition Height="Auto" /><RowDefinition Height="Auto" /><RowDefinition Height="Auto" /></Grid.RowDefinitions>
+            <DockPanel>
+              <TextBlock Text="游戏位置" FontSize="15" FontWeight="Bold" Foreground="{StaticResource ForestBrush}" />
+              <Button x:Name="BrowseButton" Content="选择文件夹" DockPanel.Dock="Right" Padding="12,7" Click="BrowseButton_Click" />
+            </DockPanel>
+            <Grid Grid.Row="1" Margin="0,10,0,0">
+              <Grid.ColumnDefinitions><ColumnDefinition Width="*" /><ColumnDefinition Width="Auto" /></Grid.ColumnDefinitions>
+              <TextBox x:Name="GamePathBox" Height="38" Padding="10,8" FontSize="13" VerticalContentAlignment="Center" BorderBrush="#D9D2C3" Background="#FFFDF8" TextChanged="GamePathBox_TextChanged" />
+              <Button x:Name="InstallButton" Grid.Column="1" Margin="10,0,0,0" Content="安装 / 检查" Click="InstallButton_Click" />
+            </Grid>
+            <TextBlock x:Name="InstallStatusText" Grid.Row="2" Text="安装前会备份游戏目录中将覆盖的文件和本地存档。" Margin="0,9,0,0" FontSize="12" Foreground="#788178" TextWrapping="Wrap" />
+            <StackPanel Grid.Row="3" Orientation="Horizontal" HorizontalAlignment="Right" Margin="0,14,0,0">
+              <Button x:Name="RestoreButton" Content="请求完整恢复" Background="#7B5942" Click="RestoreButton_Click" Margin="0,0,10,0" />
+              <Button x:Name="RemoveButton" Content="完成恢复并移除" Background="#5D665F" Click="RemoveButton_Click" />
+            </StackPanel>
+          </Grid>
+        </Border>
+      </Expander>
+    </Grid>
+  </ScrollViewer>
+</Window>
+
