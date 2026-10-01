@@ -124,6 +124,18 @@ namespace BunkerTidyUp.Mod
                             Patch(method, postfix: nameof(DropKeyPressedPostfix));
                             Count("dropInput");
                         }
+                        if (TrainerPlugin.TestMode && RuntimeBridge.IsInputEventTestPhase && typeName == "inputprovider" &&
+                            (name == "oninteractactionstarted" || name == "oninteractactionperformed" || name == "oninteractactioncanceled"))
+                        {
+                            Patch(method, postfix: nameof(InputActionCallbackPostfix));
+                            Count("testInputCallback");
+                        }
+                        if (TrainerPlugin.TestMode && RuntimeBridge.IsInputEventTestPhase &&
+                            type.FullName == "Bunker.Interaction.Behaviours.DefaultInteractionBehaviour" && name == "oninteractrequested")
+                        {
+                            Patch(method, prefix: nameof(InteractionRequestPrefix));
+                            Count("testInputRequest");
+                        }
                         if (typeName == "hands" && name == "tryadopt" && method.ReturnType == typeof(bool))
                         {
                             Patch(method, prefix: nameof(TryAdoptPrefix), finalizer: nameof(TryAdoptFinalizer));
@@ -179,6 +191,9 @@ namespace BunkerTidyUp.Mod
                     throw new InvalidOperationException("测试隔离模式没有找到 SaveSystem.Initialize");
                 if (TrainerPlugin.TestMode && (!TargetCounts.TryGetValue("testAudioPrefs", out var audioSaveCount) || audioSaveCount == 0))
                     throw new InvalidOperationException("测试隔离模式未阻止音频设置写入 PlayerPrefs");
+                if (RuntimeBridge.IsInputEventTestPhase && (!TargetCounts.TryGetValue("testInputCallback", out var inputCallbackCount) || inputCallbackCount < 3 ||
+                    !TargetCounts.TryGetValue("testInputRequest", out var inputRequestCount) || inputRequestCount == 0))
+                    throw new InvalidOperationException("测试隔离模式未完整观测 InteractAction started/performed/canceled 与游戏交互请求路径");
                 if (TrainerPlugin.TestMode) TrainerPlugin.Log.LogInfo("Test mode is blocking the game's audio PlayerPrefs writer for the isolated identity.");
             }
             catch
@@ -316,6 +331,7 @@ namespace BunkerTidyUp.Mod
         private static bool TryInteractPrefix(object __instance, object[] __args, ref bool __result, out RuntimeBridge.ClickContext __state)
         {
             __state = RuntimeBridge.BeginClick(__instance, __args);
+            RuntimeBridge.ObserveTestTryInteract(__instance, __args);
             if (!__state.BlockOriginal) return true;
             __result = false;
             return false;
@@ -329,6 +345,16 @@ namespace BunkerTidyUp.Mod
         private static void DropKeyPressedPostfix(object __instance)
         {
             RuntimeBridge.AfterOriginalDropKeyPressed(__instance);
+        }
+
+        private static void InputActionCallbackPostfix(object __instance, object[] __args, MethodBase __originalMethod)
+        {
+            RuntimeBridge.ObserveTestInputActionCallback(__originalMethod.Name, __instance, __args);
+        }
+
+        private static void InteractionRequestPrefix(object __instance, object[] __args)
+        {
+            RuntimeBridge.ObserveTestInteractionRequest(__instance, __args);
         }
 
         private static void TryAdoptPrefix(object __instance, out int __state)

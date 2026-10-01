@@ -22,14 +22,15 @@ namespace BunkerTidyUp.Mod
         private const int PickupFinalLevel = 10;
         private const float RangePickupRadius = 1.0f;
         private const float DropHeldActionInterval = 0.125f;
-        private const float DefaultRangePickupInterval = 0.25f;
-        private const int ExpandedCarryMaximum = 21;
+        private const int ExpandedCarryMaximum = 16;
+        private const int LegacyCarryMaximum = 21;
         private const int ExpandedAutoPickupMaximum = 15;
         private static readonly int[] CarryOriginalCosts = { 5, 10, 20, 30, 50, 60, 80 };
         private static readonly int[] PullOriginalCosts = { 20, 30, 40, 50, 60, 70 };
         private static readonly int[] ScatterOriginalCosts = { 50, 75, 100 };
         private static readonly int[] RepeatOriginalCosts = { 10, 20, 30, 40, 50 };
-        private static readonly int[] CarryExpansionCosts = { 81, 81, 81, 81, 82, 82, 82, 82, 83, 83, 83, 84, 84, 85 };
+        private static readonly int[] CarryExpansionCosts = { 100, 106, 112, 118, 125, 132, 142, 152, 167 };
+        private static readonly int[] CarryExpandedValues = { 10, 10, 15, 15, 15, 15, 15, 15, 15 };
         private static readonly int[] PullExpansionCosts = { 71, 71, 72, 72, 73, 74, 75, 75, 76 };
         private static readonly int[] PullExpandedAmounts = { 35, 40, 45, 50, 60, 70, 80, 90, 100 };
         private static readonly float[] PullExpandedCooldowns = { 22f, 20f, 18f, 15f, 14f, 13f, 12f, 11f, 10f };
@@ -60,16 +61,10 @@ namespace BunkerTidyUp.Mod
         private static object? _rangeReleaseConsumedInput;
         private static int _rangeReleaseConsumedFrame = -1;
         private static int _rangePressCount;
-        private static int _rangePressLimit;
-        private static float _lastRangePickupInterval;
-        private static float _nextRangePickupAt;
+        private static double _lastRangePickupInterval;
+        private static double _nextRangePickupAt;
         private static bool _rangePressActive;
         private static bool _rangePressSuppressedUntilRelease;
-        private static object? _instantBurstInput;
-        private static object? _instantBurstReleaseConsumedInput;
-        private static int _instantBurstReleaseConsumedFrame = -1;
-        private static int _instantBurstSlot = -1;
-        private static bool _instantBurstConsumed;
         private static object? _dropPressInput;
         private static float _nextDropAt;
         private static bool _dropPressActive;
@@ -114,13 +109,6 @@ namespace BunkerTidyUp.Mod
         private const int AutomatedTestSlot = 666;
         private static int _automatedTestPhase;
         private static int _automatedTestStage;
-        private static object? _instantBurstTestInteractor;
-        private static object? _instantBurstTestHands;
-        private static object? _instantBurstTestCarry;
-        private static List<object> _instantBurstTestItems = new List<object>();
-        private static int _instantBurstTestBaseline;
-        private static int _instantBurstTestAfter;
-        private static float _instantBurstTestStartedAt;
         private static string? _testReleasedAction;
         private static int _testReleasedActionFrame = -1;
         private static float _automatedTestStartedAt;
@@ -146,6 +134,36 @@ namespace BunkerTidyUp.Mod
         private static int _overflowSavedHandItems;
         private static int _overflowExpectedHandsCount;
         private static object? _overflowTestLevel;
+        private static object? _inputEventTestAction;
+        private static object? _inputEventTestKeyboard;
+        private static object? _inputEventTestTarget;
+        private static object? _inputEventTestInteractor;
+        private static int _inputEventTestBindingIndex = -1;
+        private static string? _inputEventOriginalOverridePath;
+        private static int _inputEventStartedCount;
+        private static int _inputEventPerformedCount;
+        private static int _inputEventCanceledCount;
+        private static int _inputEventRequestCount;
+        private static int _inputEventTryInteractCount;
+        private static bool _inputEventRequestUsesPrimaryAction;
+        private static bool _inputEventItemUsesFallbackAction;
+        private static bool _inputEventRequestWasPressed;
+        private static bool _inputEventTryInteractWasPressed;
+        private static bool _inputEventTryInteractWasReleased;
+        private static string _inputEventLastInteractionType = "none";
+        private static string _inputEventLastAimPoint = "unavailable";
+        private static int _inputEventRangeBaseline;
+        private static int _inputEventReleaseCount;
+        private static int _inputEventObservedAutoPicks;
+        private static float _inputEventStageStartedAt;
+        private static double _inputEventLastPickupAt;
+        private static double _inputEventFirstPickupAt;
+        private static double _inputEventExpectedInterval;
+        private static int _inputEventStage;
+        private static List<object> _inputEventTestItems = new List<object>();
+        private static string _inputEventSourcePath = "";
+        private static string _inputEventSourceInteractions = "";
+        private static string _inputEventEffectivePath = "";
 
         internal sealed class SaveSnapshot
         {
@@ -166,10 +184,11 @@ namespace BunkerTidyUp.Mod
         {
             internal bool Enabled;
             internal bool BlockOriginal;
-            internal bool InstantBurst;
             internal Vector3 TargetPosition;
             internal object? Interactor;
         }
+
+        internal static bool IsInputEventTestPhase => TrainerPlugin.TestMode && _automatedTestPhase == 5;
 
         internal static void InstallExistingControllers()
         {
@@ -305,13 +324,13 @@ namespace BunkerTidyUp.Mod
                 _heldInputInputProvider = ReadMember(_heldInputInteractor, "_input", "Input") ?? FindActiveGameComponent("InputProvider") ?? throw new InvalidOperationException("InputProvider unavailable in the isolated held-input level");
                 _automatedTestLevel = level;
 
-                PurchaseToLevel(objects, "HandCapacityUpgrade", 20, false);
+                PurchaseToLevel(objects, "HandCapacityUpgrade", 16, false);
                 SetLevel(_heldInputCarry, 7);
                 if (ReadInt(_heldInputHands, "MaxCount", "_maxCount") != 75)
                     throw new InvalidOperationException("Original Carry grade 7 did not restore the original capacity 75");
                 SetLevel(_heldInputCarry, ExpandedCarryMaximum);
-                if (GetCurrentLevel(_heldInputCarry) != ExpandedCarryMaximum || ReadInt(_heldInputHands, "MaxCount", "_maxCount") != 270)
-                    throw new InvalidOperationException("Expanded Carry grade 20 did not provide capacity 270");
+                if (GetCurrentLevel(_heldInputCarry) != ExpandedCarryMaximum || ReadInt(_heldInputHands, "MaxCount", "_maxCount") != 200)
+                    throw new InvalidOperationException("Expanded Carry grade 16 did not provide capacity 200");
 
                 _heldInputSessionIndex = 0;
                 HeldInputCadenceByGrade.Clear();
@@ -352,7 +371,10 @@ namespace BunkerTidyUp.Mod
                 if (count >= _heldInputBaseline + _heldInputExpectedLimit)
                 {
                     VerifyHeldRangeCadence(_heldInputTestGrade);
-                    _heldInputCapReachedAt = Time.realtimeSinceStartup;
+                    _testHeldAction = null;
+                    _testAimPoint = null;
+                    _heldInputReleaseAt = Time.realtimeSinceStartup;
+                    _heldInputLastCount = count;
                     _heldInputTestStage = 3;
                 }
                 else if (Time.realtimeSinceStartup - _heldInputStartedAt > 20f)
@@ -362,18 +384,10 @@ namespace BunkerTidyUp.Mod
 
             if (_heldInputTestStage == 3)
             {
-                if (Time.realtimeSinceStartup - _heldInputCapReachedAt < 1.0f) return;
+                if (Time.realtimeSinceStartup - _heldInputReleaseAt < 0.6f) return;
                 var count = ReadInt(_heldInputHands!, "Count", "_count");
-                if (count != _heldInputBaseline + _heldInputExpectedLimit || _rangePressCount != _heldInputExpectedLimit)
-                    throw new InvalidOperationException("Held pickup exceeded or reset its per-press cap while the input stayed held");
-                var extra = _heldInputItems[_heldInputExpectedLimit];
-                PrepareHeldInputRangeTarget(_heldInputInteractor!, extra);
-                if (IsPicked(extra) || InvokeOriginalItemInteraction(extra, _heldInputInteractor!))
-                    throw new InvalidOperationException("The original click path bypassed the held pickup cap");
-                _testHeldAction = null;
-                _testAimPoint = null;
-                _heldInputReleaseAt = Time.realtimeSinceStartup;
-                _heldInputLastCount = count;
+                if (count != _heldInputLastCount || _rangePressCount != _heldInputExpectedLimit)
+                    throw new InvalidOperationException("Held range pickup did not stop on release after the sampled uncapped run");
                 _heldInputTestStage = 4;
                 return;
             }
@@ -384,7 +398,7 @@ namespace BunkerTidyUp.Mod
                 if (ReadInt(_heldInputHands!, "Count", "_count") != _heldInputLastCount || IsPicked(_heldInputItems[_heldInputExpectedLimit]))
                     throw new InvalidOperationException("Held range pickup continued after input release");
                 _testRangeCandidateIds = null;
-                if (_heldInputSessionIndex < 5)
+                if (_heldInputSessionIndex < 6)
                 {
                     _heldInputSessionIndex++;
                     StartHeldInputRangeSession();
@@ -408,7 +422,7 @@ namespace BunkerTidyUp.Mod
             {
                 if (TrainerPlugin.AppliedRevision < _automatedTestRevisionBase + 1) return;
                 if (GetCurrentLevel(_heldInputCarry!) != 7 || ReadInt(_heldInputHands!, "MaxCount", "_maxCount") != 75)
-                    throw new InvalidOperationException("Disabling Carry expansion did not return the bought grade 20 to original grade 7 and capacity 75");
+                    throw new InvalidOperationException("Disabling Carry expansion did not return the bought grade 16 to original grade 7 and capacity 75");
                 BeginHeldInputDropTest();
                 return;
             }
@@ -459,7 +473,7 @@ namespace BunkerTidyUp.Mod
                 _testAimPoint = null;
                 _testRangeCandidateIds = null;
                 _testHeldAction = null;
-                WriteAutomatedGameTestReport(true, "Focused phase 4 passed: the isolated new-game tutorial was closed through the game's Menu.Deactivate API and real focus/input-lock/cursor-lock gates were awaited; TestMode simulated held actions and changing aim points while invoking original TryInteract/TryPick/TryDrop methods, so physical key rebinding was not tested. The game's ShelfScoring APIs roundtripped 68 real ItemData IDs with count 68 and next reward 21. Carry 10/16/17/18/19/20 held-range caps 5/10/15/20/25/30 include the original click; scheduled intervals are 0.2500/0.2000/0.1667/0.1429/0.1250/0.1000 seconds, and the frame-limited observed mean for each grade is recorded in BepInEx LogOutput.log. Candidate selection follows the changing aim point, reaching a cap does not restart while held, release stops pickup, a direct PlayerInteractor.TryPick does not trigger range pickup, Carry 20 provides 270 capacity and expansion-off restores grade 7/75. Original drop click plus four held drops use a scheduled 0.1250-second interval; the observed mean is recorded in BepInEx LogOutput.log and release stops further drops.");
+                WriteAutomatedGameTestReport(true, "Focused phase 4 passed on an isolated new game: the tutorial was closed through Menu.Deactivate and normal focus/input-lock/cursor-lock gates were awaited. Cadence runs at Carry 10–16 used the TestMode held-input/aim driver and original TryInteract/TryPick methods; the Carry-10 run collected the original item plus six additional items without the former five-item cap. Scheduled intervals follow 1/(5*1.2^(grade-10)); per-grade frame-limited means are recorded in BepInEx LogOutput.log. Release stops pickup, direct PlayerInteractor.TryPick does not trigger range pickup, Carry 16 provides capacity 200, and disabling expansion restores grade 7/capacity 75. The game ShelfScoring APIs roundtripped 68 ItemData IDs with next reward 21. Continuous drop remains on the scheduled 0.1250-second cadence and stops after release. The separate phase 5 uses a real Unity InputSystem state event; TestMode aimpoint fixture remains synthetic, and physical player key rebinding is not claimed as tested.");
             }
         }
 
@@ -471,7 +485,7 @@ namespace BunkerTidyUp.Mod
                 if (menu == null) return;
                 InvokeMenuStart(menu, "OnContinueClicked");
                 _automatedTestStage = 1;
-                TrainerPlugin.Log.LogInfo("Starting the focused 1.0.1 carry-21 and magnet-15 validation by continuing isolated slot 666.");
+                TrainerPlugin.Log.LogInfo("Starting the focused 1.0.2 migration/input validation by continuing isolated slot 666.");
                 return;
             }
 
@@ -485,142 +499,401 @@ namespace BunkerTidyUp.Mod
                 VerifyExpandedTables(objects);
                 VerifyApprovedPriceAndRewardPlan(objects);
                 VerifyCurrentGrades(objects, 15, 6, ExpandedCarryMaximum, 7);
-                VerifyCommittedProgressAndVanillaSave();
                 VerifyAutoPickupExpansionValues(objects);
 
-                _instantBurstTestInteractor = FindActiveGameComponent("PlayerInteractor") ?? throw new InvalidOperationException("PlayerInteractor was unavailable for the level-21 click batch test");
-                _instantBurstTestHands = FindNestedByName(_instantBurstTestInteractor, "Hands", 2) ?? throw new InvalidOperationException("Hands was unavailable for the level-21 click batch test");
-                _instantBurstTestCarry = objects["HandCapacityUpgrade"];
-                _heldInputInputProvider = ReadMember(_instantBurstTestInteractor, "_input", "Input") ?? FindActiveGameComponent("InputProvider");
-                var liveCapacity = ReadInt(_instantBurstTestHands, "MaxCount", "_maxCount");
-                if (liveCapacity != 270) throw new InvalidDataException("Carry 21 changed capacity from 270: live MaxCount=" + liveCapacity);
+                _inputEventTestInteractor = FindActiveGameComponent("PlayerInteractor") ?? throw new InvalidOperationException("PlayerInteractor was unavailable for the Unity InputSystem validation");
+                var input = ReadMember(_inputEventTestInteractor, "_input", "Input") ?? FindActiveGameComponent("InputProvider")
+                    ?? throw new InvalidOperationException("InputProvider was unavailable for the Unity InputSystem validation");
+                _inputEventTestAction = ReadMember(input, "InteractAction") ?? throw new MissingMemberException(input.GetType().FullName, "InteractAction");
+                var hands = FindNestedByName(_inputEventTestInteractor, "Hands", 2) ?? throw new InvalidOperationException("Hands was unavailable for the Unity InputSystem validation");
+                var capacity = ReadInt(hands, "MaxCount", "_maxCount");
+                if (capacity != 200) throw new InvalidDataException("Migrated Carry 16 should provide capacity 200; actual MaxCount=" + capacity);
 
-                var items = ArrangeHeldInputTestItems(_instantBurstTestInteractor, 13);
-                var playerTransform = GetTransform(_instantBurstTestInteractor) ?? throw new InvalidOperationException("PlayerInteractor transform unavailable during Carry-21 validation");
-                var forwardToAnchor = Vector3.ProjectOnPlane(_heldInputTestAnchor - playerTransform.position, Vector3.up).normalized;
-                var burstAnchor = _heldInputTestAnchor - forwardToAnchor * 0.15f;
-                var burstRight = Vector3.Cross(Vector3.up, forwardToAnchor).normalized;
-                var circleRadius = 0.70f;
-                for (var index = 0; index < items.Count; index++)
-                {
-                    if (index == 0) PositionHeldInputTestItem(items[index], burstAnchor);
-                    else if (index <= 10)
-                    {
-                        var angle = (index - 1) * (2f * Mathf.PI / 10f);
-                        var offset = new Vector3(Mathf.Cos(angle), 0f, Mathf.Sin(angle)) * circleRadius;
-                        PositionHeldInputTestItem(items[index], burstAnchor + offset);
-                    }
-                    else PositionHeldInputTestItem(items[index], burstAnchor + burstRight * (index == 11 ? 1.20f : -1.20f));
-                }
-                Physics.SyncTransforms();
-                var candidateIds = items.Select(InstanceId).ToArray();
-                if (candidateIds.Any(id => id == 0) || candidateIds.Distinct().Count() != items.Count)
-                    throw new InvalidOperationException("Carry-21 test items did not have distinct live Unity instance IDs");
-                _testRangeCandidateIds = new HashSet<int>(candidateIds);
-                _testAimPoint = GetTransform(items[0])!.position;
-                _testHeldAction = "InteractAction";
-                var viewOrigin = GetViewOrigin(_instantBurstTestInteractor, playerTransform);
-                var allowedDistance = GetInteractDistance(_instantBurstTestInteractor);
-                var interactableMask = GetInteractableMask(_instantBurstTestInteractor);
-                var visibleRangeItems = 0;
-                for (var index = 0; index < items.Count; index++)
-                {
-                    var target = GetTransform(items[index])!;
-                    var distance = Vector3.Distance(viewOrigin, target.position);
-                    if (distance > allowedDistance || !IsLayerInteractable(target, interactableMask) ||
-                        Math.Abs(target.position.y - _testAimPoint.Value.y) > 0.75f || !CanInteract(items[index], _instantBurstTestInteractor, target.position))
-                        throw new InvalidOperationException("A Carry-21 test ground item failed the actual range/layer/floor/Hands.CanAdd checks before the batch: index=" + index + ", distance=" + distance + "/" + allowedDistance);
-                    var visible = HasLineOfSight(viewOrigin, target, distance, interactableMask, GetTriggerInteraction(_instantBurstTestInteractor));
-                    if (index <= 10 && visible) visibleRangeItems++;
-                    if (index == 0 && !visible) throw new InvalidOperationException("The original Carry-21 clicked item failed the game's actual line-of-sight check");
-                    if (index > 10 && !visible) throw new InvalidOperationException("A Carry-21 test click/V target failed the game's actual line-of-sight check at index " + index);
-                }
-                if (visibleRangeItems < 9)
-                    throw new InvalidOperationException("The Carry-21 test arrangement exposed only " + visibleRangeItems + " line-of-sight candidates including the original click; at least nine are required before the clicked item is adopted and removed from the ground.");
+                var loaded = _loadedProgress ?? throw new InvalidDataException("The matching legacy sidecar was not loaded for slot 666");
+                var loadedCarry = loaded.Upgrades.Single(entry => entry.Key == "HandCapacityUpgrade").Level;
+                var loadedPull = loaded.Abilities.Single(entry => entry.Key == "ItemPullAbility").Level;
+                var loadedScatter = loaded.Abilities.Single(entry => entry.Key == "ShelfScatterAbility").Level;
+                var loadedRepeat = loaded.Upgrades.Single(entry => entry.Key == "RepeatInteractUpgrade").Level;
+                if (loadedCarry != 16 || loadedPull != 15 || loadedScatter != 6 || loadedRepeat != 7)
+                    throw new InvalidDataException("Legacy Carry migration did not preserve the other purchased grades: carry=" + loadedCarry + ", pull=" + loadedPull + ", scatter=" + loadedScatter + ", repeat=" + loadedRepeat);
+                VerifyLegacyCarryMigrationArchive();
 
-                _instantBurstTestBaseline = ReadInt(_instantBurstTestHands, "Count", "_count");
-                if (ReadInt(_instantBurstTestHands, "MaxCount", "_maxCount") - _instantBurstTestBaseline < 10)
-                    throw new InvalidOperationException("The isolated Carry-21 test did not have 10 free real hand slots");
-                _instantBurstTestItems = items;
-                lock (StateGate) RealUpgrades["HandCapacityUpgrade"] = ExpandedCarryMaximum;
-                SetLevel(_instantBurstTestCarry, ExpandedCarryMaximum);
-                if (GetCurrentLevel(_instantBurstTestCarry) != ExpandedCarryMaximum)
-                    throw new InvalidOperationException("Could not establish the saved Carry-21 level for the instant click test");
-
-                if (!InvokeOriginalItemInteraction(items[0], _instantBurstTestInteractor) || !IsPicked(items[0]))
-                    throw new InvalidOperationException("The original PickableItem.TryInteract click failed at Carry 21");
-                _instantBurstTestAfter = ReadInt(_instantBurstTestHands, "Count", "_count");
-                var pickedFromTestSet = items.Count(IsPicked);
-                if (_instantBurstTestAfter != _instantBurstTestBaseline + 10 || pickedFromTestSet != 10)
-                    throw new InvalidOperationException("Carry 21 click batch did not collect exactly ten legal items including the original click: hands=" + _instantBurstTestBaseline + "->" + _instantBurstTestAfter + ", picked test items=" + pickedFromTestSet + "/13");
-
-                if (InvokeOriginalItemInteraction(items[12], _instantBurstTestInteractor) || IsPicked(items[12]) || ReadInt(_instantBurstTestHands, "Count", "_count") != _instantBurstTestAfter)
-                    throw new InvalidOperationException("A second TryInteract while the same InteractAction remained held reopened the Carry-21 batch");
-                _instantBurstTestStartedAt = Time.realtimeSinceStartup;
+                _heldInputInteractor = _inputEventTestInteractor;
+                _heldInputHands = hands;
+                _heldInputCarry = objects["HandCapacityUpgrade"];
+                _heldInputInputProvider = input;
+                _inputEventTestItems = ArrangeHeldInputTestItems(_inputEventTestInteractor, 40);
+                _inputEventTestTarget = _inputEventTestItems[0];
+                var getInteractAction = SafeMethods(_inputEventTestTarget.GetType()).FirstOrDefault(method => method.Name == "GetInteractAction" && method.GetParameters().Length == 0)
+                    ?? throw new MissingMethodException(_inputEventTestTarget.GetType().FullName, "GetInteractAction()");
+                var itemAction = getInteractAction.Invoke(_inputEventTestTarget, null);
+                if (itemAction != null && !ReferenceEquals(itemAction, _inputEventTestAction))
+                    throw new InvalidOperationException("The arranged PickableItem uses an action other than InputProvider.InteractAction");
+                _inputEventItemUsesFallbackAction = itemAction == null;
+                _inputEventRangeBaseline = ReadInt(hands, "Count", "_count");
+                ResetInputEventTestObservations();
+                PrepareInputEventTestBinding(input);
+                _testAimPoint = null;
+                _testRangeCandidateIds = new HashSet<int>(_inputEventTestItems.Select(InstanceId));
+                SetInputEventInteractionTarget(_inputEventTestTarget);
+                QueueInputEventKeyboardState(true);
+                _inputEventStage = 1;
+                _inputEventStageStartedAt = Time.realtimeSinceStartup;
                 _automatedTestStage = 2;
-                TrainerPlugin.Log.LogInfo("Carry-21 original click collected exactly ten nearby legal same-type ground items synchronously; pre-click LOS candidates=" + visibleRangeItems + "; a second legal click target was rejected during the same held press.");
+                TrainerPlugin.Log.LogInfo("Carry migration validated in the live Continue load: legacy sidecar Carry 21 mapped to 16, other purchased skills were preserved, and capacity is 200. Phase 5 now drives the actual InteractAction through a temporary virtual Keyboard binding and Unity InputSystem state events; aim targets remain a TestMode-only fixture with 40 finite candidates.");
                 return;
             }
 
-            if (_automatedTestStage == 2 && Time.realtimeSinceStartup - _instantBurstTestStartedAt >= 0.35f)
+            if (_automatedTestStage == 2)
             {
-                if (ReadInt(_instantBurstTestHands!, "Count", "_count") != _instantBurstTestAfter || IsPicked(_instantBurstTestItems[11]) || IsPicked(_instantBurstTestItems[12]))
-                    throw new InvalidOperationException("Carry-21 started an additional queued/repeated batch after the single click");
-                var tryPick = SafeMethods(_instantBurstTestInteractor!.GetType()).FirstOrDefault(method => method.Name == "TryPick" && method.GetParameters().Length == 1 && method.GetParameters()[0].ParameterType.IsInstanceOfType(_instantBurstTestItems[11]))
-                    ?? throw new MissingMethodException(_instantBurstTestInteractor.GetType().FullName, "TryPick(PickableItem)");
-                if (!(tryPick.Invoke(_instantBurstTestInteractor, new[] { _instantBurstTestItems[11] }) is bool accepted) || !accepted || !IsPicked(_instantBurstTestItems[11]) || IsPicked(_instantBurstTestItems[12]) ||
-                    ReadInt(_instantBurstTestHands!, "Count", "_count") != _instantBurstTestAfter + 1)
-                    throw new InvalidOperationException("A direct V-style PlayerInteractor.TryPick triggered a Carry-21 range batch or failed its one requested item");
-                _instantBurstTestAfter++;
-                _testHeldAction = null;
-                _testReleasedAction = "InteractAction";
-                _testReleasedActionFrame = Time.frameCount + 1;
-                _automatedTestStage = 3;
-                TrainerPlugin.Log.LogInfo("After the no-queue wait, direct V-style TryPick collected only its explicit item; the remaining item was still available for a fresh click.");
-                return;
+                if (_inputEventStage == 1)
+                {
+                    if (_inputEventStartedCount == 0) return;
+                    if (!IsInputActionPressed(_heldInputInputProvider!, "InteractAction"))
+                        throw new InvalidOperationException("The injected keyboard state reached InputAction.started but InteractAction.IsPressed was false before the test released it");
+                    SetInputEventInteractionTarget(_inputEventTestTarget);
+                    QueueInputEventKeyboardState(false);
+                    _inputEventStage = 2;
+                    _inputEventStageStartedAt = Time.realtimeSinceStartup;
+                    TrainerPlugin.Log.LogInfo("Unity delivered InteractAction.started from the injected Keyboard state; the test now releases for the game's TapInteraction callback.");
+                    return;
+                }
+                if (_inputEventStage == 2)
+                {
+                    if (_inputEventRequestCount == 0 && Time.realtimeSinceStartup - _inputEventStageStartedAt < 3f) return;
+                    if (_inputEventRequestCount == 0)
+                        throw new TimeoutException("InputSystem start/release did not reach DefaultInteractionBehaviour.OnInteractRequested; started=" + _inputEventStartedCount + ", performed=" + _inputEventPerformedCount + ", canceled=" + _inputEventCanceledCount);
+                    if (!_inputEventRequestUsesPrimaryAction || _inputEventTestTarget == null || !IsPicked(_inputEventTestTarget) || _inputEventTryInteractCount == 0)
+                        throw new InvalidOperationException("The real InteractAction request did not perform the original clicked PickableItem: primaryAction=" + _inputEventRequestUsesPrimaryAction + ", targetPicked=" + (_inputEventTestTarget != null && IsPicked(_inputEventTestTarget)) + ", TryInteractCalls=" + _inputEventTryInteractCount + ", type=" + _inputEventLastInteractionType);
+                    if (_inputEventRequestWasPressed)
+                        throw new InvalidOperationException("The actual TapInteraction request reached OnInteractRequested while InteractAction.IsPressed remained true; the observed event was not the release edge expected by this test");
+                    if (_inputEventTryInteractWasPressed || !_inputEventTryInteractWasReleased)
+                        throw new InvalidOperationException("The original PickableItem.TryInteract did not observe the actual InteractAction release edge: pressed=" + _inputEventTryInteractWasPressed + ", releasedThisFrame=" + _inputEventTryInteractWasReleased);
+
+                    TrainerPlugin.Log.LogInfo("Observed real release-edge click path: PickableItem.GetInteractAction()=" + (_inputEventItemUsesFallbackAction ? "null" : "InteractAction") + ", request action=InteractAction (primary), interaction=" + _inputEventLastInteractionType + ", IsPressed at request=false, TryInteract IsPressed=" + _inputEventTryInteractWasPressed + ", WasReleasedThisFrame=" + _inputEventTryInteractWasReleased + ", target=" + _inputEventLastAimPoint + ".");
+                    _inputEventTestTarget = null;
+                    _inputEventObservedAutoPicks = 0;
+                    _inputEventLastPickupAt = 0;
+                    _inputEventFirstPickupAt = 0;
+                    _inputEventExpectedInterval = GetRangePickupInterval(ExpandedCarryMaximum);
+                    _testRangeCandidateIds = new HashSet<int>(_inputEventTestItems.Skip(1).Select(InstanceId));
+                    PrepareHeldInputRangeTarget(_inputEventTestInteractor!, _inputEventTestItems[1]);
+                    _inputEventRangeBaseline = ReadInt(_heldInputHands!, "Count", "_count");
+                    QueueInputEventKeyboardState(true);
+                    _inputEventStage = 3;
+                    _inputEventStageStartedAt = Time.realtimeSinceStartup;
+                    _automatedTestStage = 3;
+                    return;
+                }
             }
 
             if (_automatedTestStage == 3)
             {
-                if (_instantBurstConsumed) return;
-                _testReleasedAction = null;
-                _testReleasedActionFrame = -1;
-                _testHeldAction = "InteractAction";
-                _testAimPoint = GetTransform(_instantBurstTestItems[12])!.position;
-                var beforeRepress = ReadInt(_instantBurstTestHands!, "Count", "_count");
-                if (!InvokeOriginalItemInteraction(_instantBurstTestItems[12], _instantBurstTestInteractor!) || !IsPicked(_instantBurstTestItems[12]))
-                    throw new InvalidOperationException("A release followed by a fresh Carry-21 click did not start a new batch");
-                _instantBurstTestAfter = ReadInt(_instantBurstTestHands!, "Count", "_count");
-                if (_instantBurstTestAfter <= beforeRepress || _instantBurstTestAfter - beforeRepress > 10)
-                    throw new InvalidOperationException("A fresh Carry-21 click collected an invalid number of items after release: " + (_instantBurstTestAfter - beforeRepress));
-                _instantBurstTestStartedAt = Time.realtimeSinceStartup;
-                _automatedTestStage = 4;
-                TrainerPlugin.Log.LogInfo("A simulated release followed by a fresh InteractAction press picked the last legal target in one new batch.");
+                var heldCount = ReadInt(_heldInputHands!, "Count", "_count");
+                var automaticCount = heldCount - _inputEventRangeBaseline;
+                if (automaticCount > _inputEventObservedAutoPicks)
+                {
+                    if (automaticCount - _inputEventObservedAutoPicks != 1)
+                        throw new InvalidOperationException("A real InputAction hold frame collected more than one range target");
+                    var pickedAt = Time.realtimeSinceStartupAsDouble;
+                    if (_inputEventLastPickupAt > 0 && pickedAt - _inputEventLastPickupAt < _inputEventExpectedInterval - 0.002)
+                        throw new InvalidOperationException("A real InputAction hold exceeded the Carry 16 target rate: interval=" +
+                            (pickedAt - _inputEventLastPickupAt).ToString("0.0000", System.Globalization.CultureInfo.InvariantCulture) +
+                            "s, target=" + _inputEventExpectedInterval.ToString("0.0000", System.Globalization.CultureInfo.InvariantCulture) + "s");
+                    if (_inputEventFirstPickupAt == 0) _inputEventFirstPickupAt = pickedAt;
+                    _inputEventLastPickupAt = pickedAt;
+                    _inputEventObservedAutoPicks++;
+                    var nextItemIndex = 1 + _inputEventObservedAutoPicks;
+                    if (nextItemIndex < _inputEventTestItems.Count)
+                        PrepareHeldInputRangeTarget(_inputEventTestInteractor!, _inputEventTestItems[nextItemIndex]);
+                }
+                if (automaticCount >= 35)
+                {
+                    if (!IsInputActionPressed(_heldInputInputProvider!, "InteractAction") || !IsHeldInputContextAllowed(_heldInputInputProvider!, _heldInputInteractor!))
+                        throw new InvalidOperationException("The actual InteractAction hold lost its game input context before range pickup completed");
+                    _inputEventReleaseCount = heldCount;
+                    QueueInputEventKeyboardState(false);
+                    _inputEventStage = 4;
+                    _inputEventStageStartedAt = Time.realtimeSinceStartup;
+                    _automatedTestStage = 4;
+                    var sampleCount = _inputEventObservedAutoPicks;
+                    var average = sampleCount > 1 ? (_inputEventLastPickupAt - _inputEventFirstPickupAt) / (sampleCount - 1) : 0;
+                    if (sampleCount < 35 || average + 0.01 < _inputEventExpectedInterval)
+                        throw new InvalidOperationException("The real Carry 16 hold sample did not cross the legacy 30-item limit at the expected cadence: count=" +
+                            sampleCount + ", average=" + average.ToString("0.0000", System.Globalization.CultureInfo.InvariantCulture) +
+                            "s, expected=" + _inputEventExpectedInterval.ToString("0.0000", System.Globalization.CultureInfo.InvariantCulture) + "s");
+                    TrainerPlugin.Log.LogInfo("Actual InteractAction hold collected " + sampleCount + " automatic nearby legal items at Carry 16 (beyond the former 30-item limit); average interval=" +
+                        average.ToString("0.0000", System.Globalization.CultureInfo.InvariantCulture) + "s, target=" +
+                        _inputEventExpectedInterval.ToString("0.0000", System.Globalization.CultureInfo.InvariantCulture) + "s; release was queued through Unity InputSystem.");
+                    return;
+                }
+                if (Time.realtimeSinceStartup - _inputEventStageStartedAt > 8f)
+                    throw new TimeoutException("The real InputAction hold did not drive continuous range pickup: started=" + _inputEventStartedCount + ", hands=" + _inputEventRangeBaseline + "->" + heldCount + ", currentGrade=" + GetCurrentLevel(_heldInputCarry!));
                 return;
             }
 
-            if (_automatedTestStage == 4 && Time.realtimeSinceStartup - _instantBurstTestStartedAt >= 0.35f)
+            if (_automatedTestStage == 4 && _inputEventStage == 4 && Time.realtimeSinceStartup - _inputEventStageStartedAt >= 0.45f)
             {
-                if (ReadInt(_instantBurstTestHands!, "Count", "_count") != _instantBurstTestAfter || !IsPicked(_instantBurstTestItems[11]) || !IsPicked(_instantBurstTestItems[12]))
-                    throw new InvalidOperationException("Carry-21 repeated or queued more pickups after the released/repressed one-item batch");
-                _testHeldAction = null;
+                var handsCount = ReadInt(_heldInputHands!, "Count", "_count");
+                if (handsCount != _inputEventReleaseCount || IsInputActionPressed(_heldInputInputProvider!, "InteractAction") || _rangePressActive)
+                    throw new InvalidOperationException("Range pickup did not stop after actual InputAction release: releaseCount=" + _inputEventReleaseCount + ", current=" + handsCount + ", pressed=" + IsInputActionPressed(_heldInputInputProvider!, "InteractAction") + ", active=" + _rangePressActive);
+
+                RestoreInputEventTestBinding();
                 _testAimPoint = null;
                 _testRangeCandidateIds = null;
-                WriteAutomatedGameTestReport(true, "Focused phase 5 passed on an isolated Continue load: saved ItemPullAbility grade 15 and Carry grade 21 were restored from the slot-matched sidecar; grades 11–15 use 60/70/80/90/100 items at 14/13/12/11/10 seconds; Carry 21 keeps MaxCount=270. TestMode simulated InteractAction press/release and aim points while invoking original PickableItem.TryInteract/TryPick methods. One click synchronously collected exactly ten legal nearby items including its original target; another click during the same held press stayed blocked and no queued pickups followed. A direct V-style TryPick collected only its requested item, and a release/repress picked the remaining target once. Physical key/mouse input was not tested.");
+                _inputEventTestTarget = null;
+                _inputEventTestItems.Clear();
+                var currentLevel = FindActiveGameComponent("Level")!;
+                var autoSave = SafeMethods(currentLevel.GetType()).FirstOrDefault(method => method.Name == "AutoSave" && method.GetParameters().Length == 0)
+                    ?? throw new MissingMethodException("Level.AutoSave()");
+                _automatedSaveSequenceBaseline = CompletedSaveSequence.TryGetValue(AutomatedTestSlot, out var sequence) ? sequence : 0;
+                autoSave.Invoke(currentLevel, null);
+                _automatedTestStage = 5;
+                TrainerPlugin.Log.LogInfo("Checking that the next ordinary game save commits the migrated Carry 16 sidecar and all other extension grades.");
+                return;
             }
+
+            if (_automatedTestStage == 5 && CompletedSaveSequence.TryGetValue(AutomatedTestSlot, out var completed) && completed > _automatedSaveSequenceBaseline)
+            {
+                var progress = JsonFile.Read<SlotProgress>(ProgressPath(AutomatedTestSlot))
+                    ?? throw new InvalidDataException("The ordinary game save did not produce a migrated extension sidecar");
+                if (!string.Equals(progress.SaveFingerprint, GetSaveFingerprint(AutomatedTestSlot), StringComparison.OrdinalIgnoreCase) ||
+                    progress.Upgrades.Single(entry => entry.Key == "HandCapacityUpgrade").Level != 16 ||
+                    progress.Abilities.Single(entry => entry.Key == "ItemPullAbility").Level != 15 ||
+                    progress.Abilities.Single(entry => entry.Key == "ShelfScatterAbility").Level != 6 ||
+                    progress.Upgrades.Single(entry => entry.Key == "RepeatInteractUpgrade").Level != 7)
+                    throw new InvalidDataException("The migrated save did not retain its matching fingerprint and all non-Carry purchased grades");
+                WriteAutomatedGameTestReport(true, "Focused phase 5 passed on isolated slot 666. The fingerprint-matched legacy Carry 21 sidecar was archived and migrated to grade 16; ItemPull 15, ShelfScatter 6, and RepeatInteract 7 remained intact, capacity was 200, and the ordinary game AutoSave committed those grades under the new limit. The Unity InputSystem virtual Keyboard event triggered the game's actual InteractAction started/performed path and DefaultInteractionBehaviour.OnInteractRequested; PickableItem.GetInteractAction() was " + (_inputEventItemUsesFallbackAction ? "null, so the game's fallback primary InteractAction was used" : "the primary InteractAction") + ", and the release-edge request arrived with IsPressed=false before the original PickableItem.TryInteract. The same actual action held at Carry 16 and the production poller picked " + _inputEventObservedAutoPicks + " legal nearby targets beyond the former 30-item limit at an average interval of " +
+                    (_inputEventObservedAutoPicks > 1 ? ((_inputEventLastPickupAt - _inputEventFirstPickupAt) / (_inputEventObservedAutoPicks - 1)).ToString("0.0000", System.Globalization.CultureInfo.InvariantCulture) : "unavailable") +
+                    " seconds using the TestMode aimpoint fixture; Unity release stopped further pickups. No OS keyboard/mouse remapping or Owner save was tested.");
+            }
+        }
+
+        private static void VerifyLegacyCarryMigrationArchive()
+        {
+            var archiveDirectory = Path.Combine(TrainerPlugin.DataDirectory, "backups", "slots", "Save-" + AutomatedTestSlot);
+            if (!Directory.Exists(archiveDirectory)) throw new DirectoryNotFoundException("The original Carry-21 sidecar archive is missing for slot " + AutomatedTestSlot);
+            var archives = Directory.GetFiles(archiveDirectory, "*-carry-21-migration-*.json").OrderByDescending(File.GetLastWriteTimeUtc).ToArray();
+            if (archives.Length == 0) throw new FileNotFoundException("No pre-migration Carry-21 record was archived", archiveDirectory);
+            var archived = JsonFile.Read<SlotProgress>(archives[0]);
+            if (archived == null || !string.Equals(archived.SaveFingerprint, GetSaveFingerprint(AutomatedTestSlot), StringComparison.OrdinalIgnoreCase) ||
+                archived.Upgrades.Single(entry => entry.Key == "HandCapacityUpgrade").Level != LegacyCarryMaximum ||
+                archived.Abilities.Single(entry => entry.Key == "ItemPullAbility").Level != 15 ||
+                archived.Abilities.Single(entry => entry.Key == "ShelfScatterAbility").Level != 6 ||
+                archived.Upgrades.Single(entry => entry.Key == "RepeatInteractUpgrade").Level != 7)
+                throw new InvalidDataException("The archived legacy sidecar did not preserve its matched fingerprint, Carry 21, and the other grades");
+        }
+
+        private static void ResetInputEventTestObservations()
+        {
+            _inputEventStartedCount = 0;
+            _inputEventPerformedCount = 0;
+            _inputEventCanceledCount = 0;
+            _inputEventRequestCount = 0;
+            _inputEventTryInteractCount = 0;
+            _inputEventRequestUsesPrimaryAction = false;
+            _inputEventRequestWasPressed = true;
+            _inputEventTryInteractWasPressed = true;
+            _inputEventTryInteractWasReleased = false;
+            _inputEventLastInteractionType = "none";
+            _inputEventLastAimPoint = "unavailable";
+        }
+
+        private static void PrepareInputEventTestBinding(object inputProvider)
+        {
+            if (_inputEventTestAction == null) throw new InvalidOperationException("InteractAction was not captured before test binding setup");
+            var action = _inputEventTestAction;
+            var actionType = action.GetType();
+            var bindings = ReadMember(action, "bindings") as IEnumerable ?? throw new InvalidDataException("InteractAction.bindings was unavailable");
+            var bindingItems = bindings.Cast<object>().ToArray();
+            var actionName = Convert.ToString(ReadMember(action, "name")) ?? "Interact";
+            var candidates = bindingItems.Select((binding, index) => new
+            {
+                Binding = binding,
+                Index = index,
+                Action = Convert.ToString(ReadMember(binding, "action")) ?? "",
+                Path = Convert.ToString(ReadMember(binding, "path")) ?? "",
+                Interactions = Convert.ToString(ReadMember(binding, "interactions")) ?? "",
+                Override = Convert.ToString(ReadMember(binding, "overridePath")) ?? ""
+            }).Where(candidate => !string.IsNullOrWhiteSpace(candidate.Path) &&
+                (string.Equals(candidate.Action, actionName, StringComparison.OrdinalIgnoreCase) || string.Equals(candidate.Action, "Interact", StringComparison.OrdinalIgnoreCase)))
+                .ToArray();
+            if (candidates.Length == 0)
+                candidates = bindingItems.Select((binding, index) => new
+                {
+                    Binding = binding,
+                    Index = index,
+                    Action = Convert.ToString(ReadMember(binding, "action")) ?? "",
+                    Path = Convert.ToString(ReadMember(binding, "path")) ?? "",
+                    Interactions = Convert.ToString(ReadMember(binding, "interactions")) ?? "",
+                    Override = Convert.ToString(ReadMember(binding, "overridePath")) ?? ""
+                }).Where(candidate => !string.IsNullOrWhiteSpace(candidate.Path)).ToArray();
+            var source = candidates.FirstOrDefault(candidate => !candidate.Path.StartsWith("<Gamepad>", StringComparison.OrdinalIgnoreCase))
+                ?? candidates.FirstOrDefault()
+                ?? throw new InvalidDataException("InteractAction had no direct physical binding available for temporary test override");
+
+            var inputAssembly = actionType.Assembly;
+            var inputSystemType = inputAssembly.GetType("UnityEngine.InputSystem.InputSystem")
+                ?? throw new TypeLoadException("UnityEngine.InputSystem.InputSystem");
+            var keyboardType = inputAssembly.GetType("UnityEngine.InputSystem.Keyboard")
+                ?? throw new TypeLoadException("UnityEngine.InputSystem.Keyboard");
+            var addKeyboard = inputSystemType.GetMethods(BindingFlags.Static | BindingFlags.Public)
+                .FirstOrDefault(method => method.Name == "AddDevice" && method.IsGenericMethodDefinition && method.GetParameters().Length == 1 && method.GetParameters()[0].ParameterType == typeof(string))
+                ?? throw new MissingMethodException(inputSystemType.FullName, "AddDevice<TDevice>(String)");
+            _inputEventTestKeyboard = addKeyboard.MakeGenericMethod(keyboardType).Invoke(null, new object[] { "BunkerTrainerTestKeyboard" })
+                ?? throw new InvalidOperationException("InputSystem did not create the isolated test keyboard");
+
+            var extensionType = inputAssembly.GetType("UnityEngine.InputSystem.InputActionRebindingExtensions")
+                ?? throw new TypeLoadException("UnityEngine.InputSystem.InputActionRebindingExtensions");
+            var applyOverride = extensionType.GetMethods(BindingFlags.Static | BindingFlags.Public)
+                .FirstOrDefault(method => method.Name == "ApplyBindingOverride" && method.GetParameters().Length == 3 &&
+                    method.GetParameters()[0].ParameterType.IsInstanceOfType(action) && method.GetParameters()[1].ParameterType == typeof(int) && method.GetParameters()[2].ParameterType == typeof(string))
+                ?? throw new MissingMethodException(extensionType.FullName, "ApplyBindingOverride(InputAction, Int32, String)");
+            _inputEventTestBindingIndex = source.Index;
+            _inputEventOriginalOverridePath = source.Override;
+            _inputEventSourcePath = source.Path;
+            _inputEventSourceInteractions = source.Interactions;
+            applyOverride.Invoke(null, new object[] { action, source.Index, "<Keyboard>/e" });
+
+            var updatedBindings = ReadMember(action, "bindings") as IEnumerable ?? throw new InvalidDataException("InteractAction bindings disappeared after applying the isolated override");
+            var updated = updatedBindings.Cast<object>().ElementAt(source.Index);
+            _inputEventEffectivePath = Convert.ToString(ReadMember(updated, "effectivePath")) ?? "";
+            if (!_inputEventEffectivePath.Equals("<Keyboard>/e", StringComparison.OrdinalIgnoreCase))
+                throw new InvalidOperationException("InputSystem did not resolve the temporary virtual-keyboard binding: effectivePath=" + _inputEventEffectivePath);
+            if (!ReadBool(action, "enabled")) throw new InvalidOperationException("The game's original InteractAction was disabled during input-path validation");
+            TrainerPlugin.Log.LogInfo("Temporary test binding uses the real InteractAction source path " + _inputEventSourcePath + " with interactions '" + _inputEventSourceInteractions + "'; the Unity InputSystem resolves it to " + _inputEventEffectivePath + ".");
+        }
+
+        private static void QueueInputEventKeyboardState(bool pressed)
+        {
+            if (_inputEventTestKeyboard == null || _inputEventTestAction == null) throw new InvalidOperationException("The isolated InputSystem keyboard is not configured");
+            var inputAssembly = _inputEventTestAction.GetType().Assembly;
+            var inputSystemType = inputAssembly.GetType("UnityEngine.InputSystem.InputSystem")!;
+            var keyboardStateType = inputAssembly.GetType("UnityEngine.InputSystem.LowLevel.KeyboardState")
+                ?? throw new TypeLoadException("UnityEngine.InputSystem.LowLevel.KeyboardState");
+            var keyType = inputAssembly.GetType("UnityEngine.InputSystem.Key") ?? throw new TypeLoadException("UnityEngine.InputSystem.Key");
+            var state = Activator.CreateInstance(keyboardStateType) ?? throw new InvalidOperationException("KeyboardState could not be constructed");
+            if (pressed)
+            {
+                var press = keyboardStateType.GetMethods(BindingFlags.Instance | BindingFlags.Public).FirstOrDefault(method => method.Name == "Press" &&
+                    method.GetParameters().Length == 1 && method.GetParameters()[0].ParameterType == keyType)
+                    ?? throw new MissingMethodException(keyboardStateType.FullName, "Press(Key)");
+                press.Invoke(state, new[] { Enum.Parse(keyType, "E") });
+            }
+            var queue = inputSystemType.GetMethods(BindingFlags.Static | BindingFlags.Public)
+                .FirstOrDefault(method => method.Name == "QueueStateEvent" && method.IsGenericMethodDefinition && method.GetParameters().Length == 3 &&
+                    method.GetParameters()[0].ParameterType.Name == "InputDevice" && method.GetParameters()[2].ParameterType == typeof(double))
+                ?? throw new MissingMethodException(inputSystemType.FullName, "QueueStateEvent<TState>(InputDevice, TState, Double)");
+            queue.MakeGenericMethod(keyboardStateType).Invoke(null, new[] { _inputEventTestKeyboard, state, (object)(-1d) });
+        }
+
+        private static void RestoreInputEventTestBinding()
+        {
+            var action = _inputEventTestAction;
+            if (action != null && _inputEventTestBindingIndex >= 0)
+            {
+                var extensionType = action.GetType().Assembly.GetType("UnityEngine.InputSystem.InputActionRebindingExtensions");
+                if (extensionType != null)
+                {
+                    if (!string.IsNullOrWhiteSpace(_inputEventOriginalOverridePath))
+                    {
+                        var apply = extensionType.GetMethods(BindingFlags.Static | BindingFlags.Public).FirstOrDefault(method => method.Name == "ApplyBindingOverride" &&
+                            method.GetParameters().Length == 3 && method.GetParameters()[0].ParameterType.IsInstanceOfType(action) && method.GetParameters()[1].ParameterType == typeof(int));
+                        apply?.Invoke(null, new object[] { action, _inputEventTestBindingIndex, _inputEventOriginalOverridePath! });
+                    }
+                    else
+                    {
+                        var remove = extensionType.GetMethods(BindingFlags.Static | BindingFlags.Public).FirstOrDefault(method => method.Name == "RemoveBindingOverride" &&
+                            method.GetParameters().Length == 2 && method.GetParameters()[0].ParameterType.IsInstanceOfType(action) && method.GetParameters()[1].ParameterType == typeof(int));
+                        remove?.Invoke(null, new object[] { action, _inputEventTestBindingIndex });
+                    }
+                }
+            }
+            if (_inputEventTestKeyboard != null && _inputEventTestAction != null)
+            {
+                var systemType = _inputEventTestAction.GetType().Assembly.GetType("UnityEngine.InputSystem.InputSystem");
+                var removeDevice = systemType?.GetMethods(BindingFlags.Static | BindingFlags.Public).FirstOrDefault(method => method.Name == "RemoveDevice" &&
+                    method.GetParameters().Length == 1 && method.GetParameters()[0].ParameterType.IsInstanceOfType(_inputEventTestKeyboard));
+                try { removeDevice?.Invoke(null, new[] { _inputEventTestKeyboard }); }
+                catch (Exception ex) { TrainerPlugin.Log.LogWarning("Could not remove the isolated virtual keyboard after input test: " + ex.GetBaseException().Message); }
+            }
+            _inputEventTestKeyboard = null;
+            _inputEventTestBindingIndex = -1;
+            _inputEventOriginalOverridePath = null;
+        }
+
+        private static void SetInputEventInteractionTarget(object? target)
+        {
+            if (_inputEventTestInteractor == null) return;
+            var state = ReadMember(_inputEventTestInteractor, "_currentState", "CurrentState");
+            if (state == null) return;
+            var flags = BindingFlags.Instance | BindingFlags.Public | BindingFlags.NonPublic;
+            var interactableField = state.GetType().GetField("_lastInteractable", flags);
+            interactableField?.SetValue(state, target);
+            var pointField = state.GetType().GetField("_lastHitPoint", flags);
+            if (pointField != null) pointField.SetValue(state, target == null ? Vector3.zero : GetTransform(target)?.position ?? Vector3.zero);
+            var skipField = state.GetType().GetField("_skipFirstInteraction", flags);
+            skipField?.SetValue(state, false);
+            _inputEventLastAimPoint = target == null ? "none" : (GetTransform(target)?.position.ToString() ?? "unknown");
+        }
+
+        internal static void ObserveTestInputActionCallback(string methodName, object provider, object[] args)
+        {
+            if (!IsInputEventTestPhase || _inputEventTestAction == null || args.Length == 0) return;
+            var callbackAction = ReadMember(args[0], "action", "Action");
+            if (!ReferenceEquals(callbackAction, _inputEventTestAction)) return;
+            if (methodName == "OnInteractActionStarted") _inputEventStartedCount++;
+            else if (methodName == "OnInteractActionPerformed") _inputEventPerformedCount++;
+            else if (methodName == "OnInteractActionCanceled") _inputEventCanceledCount++;
+        }
+
+        internal static void ObserveTestInteractionRequest(object behavior, object[] args)
+        {
+            if (!IsInputEventTestPhase || args.Length < 2 || _inputEventTestAction == null) return;
+            _inputEventRequestCount++;
+            _inputEventLastInteractionType = Convert.ToString(args[0]) ?? "unknown";
+            _inputEventRequestUsesPrimaryAction = ReferenceEquals(args[1], _inputEventTestAction);
+            _inputEventRequestWasPressed = IsInputActionObjectPressed(args[1]);
+            SetInputEventInteractionTarget(_inputEventTestTarget);
+        }
+
+        internal static void ObserveTestTryInteract(object item, object[] args)
+        {
+            if (!IsInputEventTestPhase || _inputEventTestTarget == null || !ReferenceEquals(item, _inputEventTestTarget)) return;
+            var input = args.FirstOrDefault(argument => argument != null && argument.GetType().Name == "InputProvider");
+            if (input == null && _inputEventTestInteractor != null) input = ReadMember(_inputEventTestInteractor, "_input", "Input");
+            if (input == null) return;
+            var action = ReadMember(input, "InteractAction");
+            _inputEventTryInteractCount++;
+            _inputEventTryInteractWasPressed = action != null && IsInputActionObjectPressed(action);
+            _inputEventTryInteractWasReleased = action != null && IsInputActionObjectReleased(action);
+        }
+
+        private static bool IsInputActionObjectPressed(object action)
+        {
+            var method = SafeMethods(action.GetType()).FirstOrDefault(candidate => candidate.Name == "IsPressed" && candidate.GetParameters().Length == 0);
+            try { return method?.Invoke(action, null) is bool pressed && pressed; }
+            catch { return false; }
+        }
+
+        private static bool IsInputActionObjectReleased(object action)
+        {
+            var method = SafeMethods(action.GetType()).FirstOrDefault(candidate => candidate.Name == "WasReleasedThisFrame" && candidate.GetParameters().Length == 0);
+            try { return method?.Invoke(action, null) is bool released && released; }
+            catch { return false; }
         }
 
         private static void StartHeldInputRangeSession()
         {
-            var grades = new[] { 10, 16, 17, 18, 19, 20 };
+            var grades = new[] { 10, 11, 12, 13, 14, 15, 16 };
             var grade = grades[_heldInputSessionIndex];
             _heldInputTestGrade = grade;
             lock (StateGate) RealUpgrades["HandCapacityUpgrade"] = grade;
             SetLevel(_heldInputCarry!, grade);
             if (GetCurrentLevel(_heldInputCarry!) != grade) throw new InvalidOperationException("Could not set isolated Carry grade " + grade);
-            _heldInputExpectedLimit = GetRangeHoldLimit(grade);
-            if (_heldInputExpectedLimit != (grade <= 15 ? 5 : (grade - 14) * 5))
-                throw new InvalidOperationException("Range-hold cap mapping changed for Carry grade " + grade);
+                // This cadence phase samples a small finite set; keep its fixture size independent from the product's unlimited press behavior.
+                var automaticPicks = grade == 10 ? 6 : 3;
+            _heldInputExpectedLimit = automaticPicks + 1;
             _heldInputItems = ArrangeHeldInputTestItems(_heldInputInteractor!, _heldInputExpectedLimit + 2);
             _heldInputBaseline = ReadInt(_heldInputHands!, "Count", "_count");
             _heldInputLastCount = _heldInputBaseline;
@@ -647,8 +920,8 @@ namespace BunkerTidyUp.Mod
             if (_heldInputExpectedLimit > 1) PrepareHeldInputRangeTarget(_heldInputInteractor!, _heldInputItems[1]);
             _heldInputTestStage = 2;
             TrainerPlugin.Log.LogInfo("Started held range session at Carry " + grade + ": cap=" + _heldInputExpectedLimit +
-                ", target=" + GetRangePickupRate(grade) + "/s (" + GetRangePickupInterval(grade).ToString("0.0000", System.Globalization.CultureInfo.InvariantCulture) +
-                "s), effective=" + GetCurrentLevel(_heldInputCarry!) + ", recorded test purchase grade=" + RealUpgrades["HandCapacityUpgrade"] + ", including the original click.");
+                ", target=" + GetRangePickupRate(grade).ToString("0.00000", System.Globalization.CultureInfo.InvariantCulture) + "/s (" + GetRangePickupInterval(grade).ToString("0.000000", System.Globalization.CultureInfo.InvariantCulture) +
+                "s), effective=" + GetCurrentLevel(_heldInputCarry!) + ", recorded test purchase grade=" + RealUpgrades["HandCapacityUpgrade"] + ", original click plus " + automaticPicks + " automatic picks (no per-press cap).");
         }
 
         private static void VerifyHeldRangeCadence(int carryLevel)
@@ -673,12 +946,9 @@ namespace BunkerTidyUp.Mod
                     maximum.ToString("0.0000", System.Globalization.CultureInfo.InvariantCulture) + "s, frameDelta=" +
                     _heldInputMaxFrameDelta.ToString("0.0000", System.Globalization.CultureInfo.InvariantCulture) + "s.");
 
-            if (carryLevel == 16 && HeldInputCadenceByGrade.TryGetValue(10, out var grade10Average) && average >= grade10Average - 0.01f)
-                throw new InvalidOperationException("Carry 16 did not accelerate the observed pickup cadence relative to Carry 10: grade10=" +
-                    grade10Average.ToString("0.0000", System.Globalization.CultureInfo.InvariantCulture) + "s, grade16=" + average.ToString("0.0000", System.Globalization.CultureInfo.InvariantCulture) + "s.");
-            if (carryLevel == 20 && HeldInputCadenceByGrade.TryGetValue(16, out var grade16Average) && average >= grade16Average - 0.01f)
-                throw new InvalidOperationException("Carry 20 did not accelerate the observed pickup cadence relative to Carry 16: grade16=" +
-                    grade16Average.ToString("0.0000", System.Globalization.CultureInfo.InvariantCulture) + "s, grade20=" + average.ToString("0.0000", System.Globalization.CultureInfo.InvariantCulture) + "s.");
+            if (carryLevel > 10 && HeldInputCadenceByGrade.TryGetValue(carryLevel - 1, out var previousAverage) && average >= previousAverage - 0.015f)
+                throw new InvalidOperationException("Carry " + carryLevel + " did not accelerate relative to grade " + (carryLevel - 1) + ": prior=" +
+                    previousAverage.ToString("0.0000", System.Globalization.CultureInfo.InvariantCulture) + "s, current=" + average.ToString("0.0000", System.Globalization.CultureInfo.InvariantCulture) + "s.");
             HeldInputCadenceByGrade[carryLevel] = average;
 
             TrainerPlugin.Log.LogInfo("Verified held range cadence at Carry " + carryLevel + ": cap=" + _heldInputExpectedLimit +
@@ -688,18 +958,9 @@ namespace BunkerTidyUp.Mod
                 _heldInputMaxFrameDelta.ToString("0.0000", System.Globalization.CultureInfo.InvariantCulture) + "s).");
         }
 
-        private static int GetRangePickupRate(int carryLevel)
-        {
-            if (carryLevel <= 15) return 4;
-            if (carryLevel <= 19) return carryLevel - 11;
-            return 10;
-        }
+        private static double GetRangePickupRate(int carryLevel) => 5d * Math.Pow(1.2d, carryLevel - 10);
 
-        private static float GetRangePickupInterval(int carryLevel)
-        {
-            var rate = GetRangePickupRate(carryLevel);
-            return rate == 4 ? DefaultRangePickupInterval : 1f / rate;
-        }
+        private static double GetRangePickupInterval(int carryLevel) => 1d / GetRangePickupRate(carryLevel);
 
         private static bool PrepareHeldInputTestContext(object level)
         {
@@ -957,9 +1218,9 @@ namespace BunkerTidyUp.Mod
                 VerifyApprovedPriceAndRewardPlan(objects);
                 PurchaseToLevel(objects, "ItemPullAbility", 15, true);
                 PurchaseToLevel(objects, "ShelfScatterAbility", 6, true);
-                PurchaseToLevel(objects, "HandCapacityUpgrade", 20, false);
+                PurchaseToLevel(objects, "HandCapacityUpgrade", 15, false);
                 PurchaseToLevel(objects, "RepeatInteractUpgrade", 7, false);
-                VerifyCurrentGrades(objects, 15, 6, 20, 7);
+                VerifyCurrentGrades(objects, 15, 6, 15, 7);
                 var walletType = FindGameType("PlayerWallet") ?? throw new InvalidOperationException("PlayerWallet was not found");
                 var wallet = GetPlayerWalletInstance() ?? throw new InvalidOperationException("PlayerWallet.Instance is not ready");
                 walletType.GetMethod("Add", BindingFlags.Instance | BindingFlags.Public)?.Invoke(wallet, new object[] { 1000000 });
@@ -988,7 +1249,7 @@ namespace BunkerTidyUp.Mod
                 if (!CompletedSaveSequence.TryGetValue(AutomatedTestSlot, out var sequence) || sequence <= _automatedSaveSequenceBaseline) return;
                 var progress = JsonFile.Read<SlotProgress>(ProgressPath(AutomatedTestSlot));
                 if (progress == null || !string.Equals(progress.SaveFingerprint, GetSaveFingerprint(AutomatedTestSlot), StringComparison.OrdinalIgnoreCase)) return;
-                VerifyCommittedProgressAndVanillaSave(20);
+                VerifyCommittedProgressAndVanillaSave(15);
                 StartReadingSavedModel();
                 _automatedTestStage = 4;
                 return;
@@ -1023,18 +1284,20 @@ namespace BunkerTidyUp.Mod
                 if (TrainerPlugin.AppliedRevision < _automatedTestRevisionBase + 3) return;
                 var objects = FindLevelObjects().ToDictionary(item => item.Owner.GetType().Name, item => item.Owner, StringComparer.Ordinal);
                 VerifyExpandedTables(objects);
-                VerifyCurrentGrades(objects, 15, 6, 20, 7);
-                PurchaseToLevel(objects, "HandCapacityUpgrade", ExpandedCarryMaximum, false);
+                VerifyCurrentGrades(objects, 15, 6, 15, 7);
                 var hands = FindNestedByName(FindActiveGameComponent("PlayerInteractor")!, "Hands", 2)
                     ?? throw new InvalidOperationException("Hands unavailable after the genuine Carry-21 purchase");
-                if (ReadInt(hands, "MaxCount", "_maxCount") != 270)
-                    throw new InvalidOperationException("Carry 21 changed the expected 270-item capacity");
+                if (ReadInt(hands, "MaxCount", "_maxCount") != 185)
+                    throw new InvalidOperationException("Carry 15 did not retain the expected capacity 185 before the final purchase");
+                PurchaseToLevel(objects, "HandCapacityUpgrade", ExpandedCarryMaximum, false);
+                if (ReadInt(hands, "MaxCount", "_maxCount") != 200)
+                    throw new InvalidOperationException("A genuine Carry 16 purchase did not produce capacity 200");
                 var autoSave = SafeMethods(_automatedTestLevel!.GetType()).FirstOrDefault(method => method.Name == "AutoSave" && method.GetParameters().Length == 0)
                     ?? throw new MissingMethodException("Level.AutoSave()");
                 _automatedSaveSequenceBaseline = CompletedSaveSequence.TryGetValue(AutomatedTestSlot, out var sequence) ? sequence : 0;
                 autoSave.Invoke(_automatedTestLevel, null);
                 _automatedTestStage = 7;
-                TrainerPlugin.Log.LogInfo("Purchased Carry 21 after the MaxAll/off/on checks and started a separate game AutoSave for its durable sidecar/reload verification.");
+                TrainerPlugin.Log.LogInfo("Purchased Carry 16 after the MaxAll/off/on checks, verified capacity 200, and started a separate game AutoSave for its durable sidecar/reload verification.");
                 return;
             }
 
@@ -1052,10 +1315,11 @@ namespace BunkerTidyUp.Mod
             if (_automatedTestStage == 8)
             {
                 if (_automatedSaveLoadTask == null || !_automatedSaveLoadTask.IsCompleted) return;
-                if (_automatedSaveLoadTask.IsFaulted) throw new IOException("The game's own SaveSystem.Load failed after the genuine Carry-21 purchase", _automatedSaveLoadTask.Exception);
+                if (_automatedSaveLoadTask.IsFaulted) throw new IOException("The game's own SaveSystem.Load failed after the genuine Carry-16 purchase", _automatedSaveLoadTask.Exception);
                 _automatedSaveModel = ReadTaskResult(_automatedSaveLoadTask);
                 VerifyVanillaSaveGrades(_automatedSaveModel!);
-                WriteAutomatedGameTestReport(true, "The real game purchase path bought ItemPullAbility 15 and Carry 21; MaxAll temporarily applied Carry 21 from real Carry 20 and its autosave sidecar preserved grade 20; expansion off restored the vanilla table/grade, expansion on restored real grade 20, then a separate genuine Carry-21 purchase saved and reloaded through SaveSystem.Load with vanilla-compatible grades and a slot-matched sidecar.");
+                VerifyCommittedProgressAndVanillaSave(ExpandedCarryMaximum);
+                WriteAutomatedGameTestReport(true, "The real game purchase path bought ItemPullAbility 15 and Carry 15; MaxAll temporarily applied Carry 16 while its autosave sidecar preserved true Carry 15; expansion off restored original grade 7/capacity 75, expansion on restored true grade 15, then a genuine Carry 16 purchase produced capacity 200 and saved/reloaded through the game's SaveSystem with vanilla-compatible grade 7 plus a matching grade-16 sidecar.");
                 return;
             }
         }
@@ -1503,6 +1767,7 @@ namespace BunkerTidyUp.Mod
             VerifyPrices(objects, "RepeatInteractUpgrade", "_steps", 5, RepeatExpansionCosts);
 
             VerifyAutoPickupExpansionValues(objects);
+            VerifyCarryExpansionValues(objects);
             var expandedTotal = CarryExpansionCosts.Sum() + PullExpansionCosts.Sum() + ScatterExpansionCosts.Sum() + RepeatExpansionCosts.Sum();
             var originalTotal = SumOriginalPrices(objects);
             if (originalTotal != 1280 || expandedTotal != 2796 || originalTotal + expandedTotal != 4076)
@@ -1532,6 +1797,22 @@ namespace BunkerTidyUp.Mod
                 if (amount != PullExpandedAmounts[index] || Math.Abs(cooldown - PullExpandedCooldowns[index]) > 0.001f)
                     throw new InvalidDataException("ItemPullAbility grade " + grade + " expected " + PullExpandedAmounts[index] + " items / " + PullExpandedCooldowns[index] + " seconds but found " + amount + " / " + cooldown);
             }
+        }
+
+        private static void VerifyCarryExpansionValues(Dictionary<string, object> objects)
+        {
+            if (!objects.TryGetValue("HandCapacityUpgrade", out var owner) || !(ReadMember(owner, "_steps") is IList list) || list.Count != ExpandedCarryMaximum)
+                throw new InvalidDataException("HandCapacityUpgrade did not expose the expected 16-step table");
+            for (var index = 0; index < CarryExpandedValues.Length; index++)
+            {
+                var grade = index + 8;
+                var step = list[grade - 1]!;
+                var value = ReadInt(step, "Value", "_value");
+                if (value != CarryExpandedValues[index])
+                    throw new InvalidDataException("Carry grade " + grade + " expected capacity increment " + CarryExpandedValues[index] + " but found " + value);
+            }
+            if (75 + CarryExpandedValues.Sum() != 200)
+                throw new InvalidDataException("Carry grade 16 capacity arithmetic did not equal 200");
         }
 
         private static void VerifyOriginalPrices(Dictionary<string, object> objects, string typeName, string listName, int[] expected)
@@ -1794,6 +2075,12 @@ namespace BunkerTidyUp.Mod
             _testHeldAction = null;
             _testAimPoint = null;
             _testRangeCandidateIds = null;
+            try
+            {
+                if (_inputEventTestKeyboard != null) QueueInputEventKeyboardState(false);
+                RestoreInputEventTestBinding();
+            }
+            catch (Exception ex) { TrainerPlugin.Log.LogWarning("Could not fully clean up the isolated InputSystem test binding: " + ex.GetBaseException().Message); }
             StopRangePress(true);
             StopDropPress(true);
             _automatedTestStage = -1;
@@ -1879,10 +2166,10 @@ namespace BunkerTidyUp.Mod
                 }
                 else
                 {
-                    WriteMember(copy, category == "carry" ? (grade <= 20 ? 15 : 0) : 5, "value", "_value");
                     var costs = category == "carry" ? CarryExpansionCosts : RepeatExpansionCosts;
                     var originalCount = original.Count;
                     var index = Math.Max(0, Math.Min(costs.Length - 1, grade - originalCount - 1));
+                    WriteMember(copy, category == "carry" ? CarryExpandedValues[index] : 5, "value", "_value");
                     WriteMember(copy, costs[index], "cost", "_cost");
                 }
                 list.Add(copy);
@@ -2362,7 +2649,7 @@ namespace BunkerTidyUp.Mod
                     var info = new FileInfo(candidate);
                     if (info.Length <= 0 || info.Length > 1024 * 1024) throw new InvalidDataException("sidecar file size is invalid");
                     progress = JsonFile.Read<SlotProgress>(candidate);
-                    if (!IsValidProgress(progress, slot)) throw new InvalidDataException("sidecar schema or progress values are invalid");
+                    if (!IsValidProgress(progress, slot, allowLegacyCarry: true)) throw new InvalidDataException("sidecar schema or progress values are invalid");
                 }
                 catch (Exception ex)
                 {
@@ -2375,7 +2662,29 @@ namespace BunkerTidyUp.Mod
 
                 if (string.Equals(progress!.SaveFingerprint, currentFingerprint, StringComparison.OrdinalIgnoreCase))
                 {
-                    if (updateStatus && !string.Equals(candidate, primaryPath, StringComparison.OrdinalIgnoreCase))
+                    var oldCarry = progress.Upgrades.FirstOrDefault(entry => entry.Key == "HandCapacityUpgrade");
+                    var carryMigrated = false;
+                    if (oldCarry != null && oldCarry.Level > ExpandedCarryMaximum)
+                    {
+                        if (oldCarry.Level > LegacyCarryMaximum)
+                        {
+                            corruptFiles.Add(candidate);
+                            ArchiveInvalidProgress(candidate, backupDirectory);
+                            TrainerPlugin.Log.LogWarning("Ignored extension progress with unsupported Carry grade " + oldCarry.Level + " in " + candidate);
+                            continue;
+                        }
+
+                        ArchiveLegacyCarryProgress(candidate, backupDirectory);
+                        oldCarry.Level = ExpandedCarryMaximum;
+                        carryMigrated = true;
+                        if (updateStatus)
+                        {
+                            TrainerPlugin.Status.State = "extensionMigrated";
+                            TrainerPlugin.Status.Message = "旧版 Carry 17–21 级记录已备份并迁移到新版上限 16；其他扩展等级已保留，游戏存档会在下次保存时更新";
+                            TrainerPlugin.Status.RestoreSaved = false;
+                        }
+                    }
+                    if (updateStatus && !carryMigrated && !string.Equals(candidate, primaryPath, StringComparison.OrdinalIgnoreCase))
                     {
                         TrainerPlugin.Status.State = "extensionRecovered";
                         TrainerPlugin.Status.Message = "扩展记录损坏或与存档不同步，已从匹配当前存档的备份恢复；坏文件已归档";
@@ -2401,17 +2710,17 @@ namespace BunkerTidyUp.Mod
             return null;
         }
 
-        private static bool IsValidProgress(SlotProgress? progress, int slot)
+        private static bool IsValidProgress(SlotProgress? progress, int slot, bool allowLegacyCarry = false)
         {
             if (progress == null || progress.Schema != 1 || progress.Slot != slot ||
                 !string.Equals(progress.SaveFileName, "Save-" + slot + ".sav", StringComparison.Ordinal) ||
                 !IsFingerprint(progress.SaveFingerprint) || progress.Abilities == null || progress.Upgrades == null ||
                 progress.Abilities.Count > 4 || progress.Upgrades.Count > 5) return false;
 
-            return ValidEntries(progress.Abilities, true) && ValidEntries(progress.Upgrades, false);
+            return ValidEntries(progress.Abilities, true) && ValidEntries(progress.Upgrades, false, allowLegacyCarry);
         }
 
-        private static bool ValidEntries(List<LevelEntry> entries, bool abilities)
+        private static bool ValidEntries(List<LevelEntry> entries, bool abilities, bool allowLegacyCarry = false)
         {
             var seen = new HashSet<string>(StringComparer.Ordinal);
             foreach (var entry in entries)
@@ -2427,7 +2736,7 @@ namespace BunkerTidyUp.Mod
                 }
                 else
                 {
-                    if (entry.Key == "HandCapacityUpgrade") maximum = ExpandedCarryMaximum;
+                    if (entry.Key == "HandCapacityUpgrade") maximum = allowLegacyCarry ? LegacyCarryMaximum : ExpandedCarryMaximum;
                     else if (entry.Key == "RepeatInteractUpgrade") maximum = 10;
                     else if (entry.Key == "HandGroupingUpgrade" || entry.Key == "MoveSpeedUpgrade" || entry.Key == "JumpHeightUpgrade") maximum = 15;
                     else return false;
@@ -2460,12 +2769,28 @@ namespace BunkerTidyUp.Mod
             }
         }
 
+        private static void ArchiveLegacyCarryProgress(string sourcePath, string backupDirectory)
+        {
+            try
+            {
+                if (!File.Exists(sourcePath)) return;
+                Directory.CreateDirectory(backupDirectory);
+                var archive = Path.Combine(backupDirectory, DateTime.UtcNow.ToString("yyyyMMdd-HHmmss-fff") + "-carry-21-migration-" + Guid.NewGuid().ToString("N") + ".json");
+                File.Copy(sourcePath, archive, false);
+                if (TrainerPlugin.TestMode) TrainerPlugin.Log.LogInfo("Archived the original pre-1.0.2 Carry extension record before migration: " + archive);
+            }
+            catch (Exception ex)
+            {
+                throw new IOException("Could not preserve the legacy Carry progress before migration", ex);
+            }
+        }
+
         internal static void RunProgressCorruptionFallbackSelfTest()
         {
             var root = Path.Combine(Path.GetTempPath(), "BunkerTidyUpTrainer-progress-test-" + Guid.NewGuid().ToString("N"));
             var slot = 987654;
             var primaryPath = Path.Combine(root, "slots", "Save-" + slot + ".sav.extension.json");
-            var backupDirectory = Path.Combine(root, "backups", "Save-" + slot);
+            var backupDirectory = Path.Combine(root, "backups", "slots", "Save-" + slot);
             var fingerprint = new string('a', 64);
             try
             {
@@ -2487,7 +2812,7 @@ namespace BunkerTidyUp.Mod
                     },
                     Upgrades = new List<LevelEntry>
                     {
-                        new LevelEntry { Key = "HandCapacityUpgrade", Level = 14 },
+                        new LevelEntry { Key = "HandCapacityUpgrade", Level = 21 },
                         new LevelEntry { Key = "HandGroupingUpgrade", Level = 2 },
                         new LevelEntry { Key = "MoveSpeedUpgrade", Level = 1 },
                         new LevelEntry { Key = "JumpHeightUpgrade", Level = 1 },
@@ -2496,9 +2821,15 @@ namespace BunkerTidyUp.Mod
                 };
                 JsonFile.WriteAtomic(primaryPath + ".previous", recovery);
                 var loaded = ReadProgressCandidates(slot, fingerprint, primaryPath, backupDirectory, false);
-                if (loaded == null || loaded.Abilities[0].Level != 9 || loaded.Upgrades[0].Level != 14 ||
+                if (loaded == null || loaded.Abilities.Single(entry => entry.Key == "ItemPullAbility").Level != 9 ||
+                    loaded.Upgrades.Single(entry => entry.Key == "HandCapacityUpgrade").Level != 16 ||
+                    loaded.Upgrades.Single(entry => entry.Key == "RepeatInteractUpgrade").Level != 7 ||
                     File.ReadAllText(primaryPath) != "{ broken-json" || !Directory.Exists(backupDirectory) || Directory.GetFiles(backupDirectory, "*.json").Length == 0)
-                    throw new InvalidOperationException("A corrupt primary sidecar was not safely recovered from a matching backup");
+                    throw new InvalidOperationException("A corrupt primary sidecar was not recovered from a matching backup with legacy Carry mapped to 16 and other grades preserved");
+                var legacyArchive = Directory.GetFiles(backupDirectory, "*-carry-21-migration-*.json").Select(path => JsonFile.Read<SlotProgress>(path)).FirstOrDefault(progress =>
+                    progress != null && progress.Upgrades.Any(entry => entry.Key == "HandCapacityUpgrade" && entry.Level == 21));
+                if (legacyArchive == null || legacyArchive.Abilities.Single(entry => entry.Key == "ShelfScatterAbility").Level != 8)
+                    throw new InvalidOperationException("The legacy Carry-21 sidecar was not preserved in a readable migration archive");
 
                 var noMatch = ReadProgressCandidates(slot, new string('b', 64), primaryPath, backupDirectory, false);
                 if (noMatch != null) throw new InvalidOperationException("A sidecar without the current save fingerprint was accepted");
@@ -2585,11 +2916,6 @@ namespace BunkerTidyUp.Mod
         {
             StopRangePress(true);
             StopDropPress(true);
-            _instantBurstInput = null;
-            _instantBurstSlot = -1;
-            _instantBurstConsumed = false;
-            _instantBurstReleaseConsumedInput = null;
-            _instantBurstReleaseConsumedFrame = -1;
         }
 
         internal static void ProcessMainThreadActions()
@@ -2865,14 +3191,10 @@ namespace BunkerTidyUp.Mod
         private static void ProcessHeldRangePickup(object input, object? interactor)
         {
             ConsumeRangeRelease(input);
-            ConsumeInstantBurstRelease(input);
             var pressed = IsInputActionPressed(input, "InteractAction");
             if (!pressed)
             {
                 StopRangePress(false);
-                _instantBurstInput = input;
-                _instantBurstSlot = GetSaveSlot();
-                _instantBurstConsumed = false;
                 return;
             }
 
@@ -2888,35 +3210,34 @@ namespace BunkerTidyUp.Mod
                 StopRangePress(true);
                 return;
             }
-            if (carryLevel >= ExpandedCarryMaximum)
-            {
-                StopRangePress(_rangePressSuppressedUntilRelease);
-                return;
-            }
             if (_rangePressSuppressedUntilRelease) return;
             if (!EnsureRangePress(input, interactor, carryLevel)) return;
-            if (_rangePressCount >= _rangePressLimit || Time.realtimeSinceStartup < _nextRangePickupAt) return;
+            if (Time.realtimeSinceStartupAsDouble < _nextRangePickupAt) return;
 
             _lastRangePickupInterval = GetRangePickupInterval(carryLevel);
-            _nextRangePickupAt = Time.realtimeSinceStartup + _lastRangePickupInterval;
+            _nextRangePickupAt = Time.realtimeSinceStartupAsDouble + _lastRangePickupInterval;
             if (!HasCapacity(interactor) || !TryGetCurrentAimPoint(interactor, out var aimPoint)) return;
             if (!TryFindNearestRangeItem(interactor, aimPoint, out var candidate, out var candidateId)) return;
             if (!RangePressAttemptedItems.Add(candidateId)) return;
 
             IsRangeBatch = true;
-            try { TryPick(interactor, candidate); }
+            var picked = false;
+            try { picked = TryPick(interactor, candidate); }
             finally { IsRangeBatch = false; }
+            if (picked && IsPicked(candidate) && RangePressCountedItems.Add(candidateId))
+            {
+                _rangePressCount++;
+                // Start the next interval after the original game's successful pick completes,
+                // so a slow scene scan or pickup callback cannot make the effective rate faster.
+                _nextRangePickupAt = Time.realtimeSinceStartupAsDouble + _lastRangePickupInterval;
+            }
         }
 
         internal static ClickContext BeginClick(object item, object[] args)
         {
+            if (IsRangeBatch) return new ClickContext();
             var interactor = args.FirstOrDefault(a => a != null && a.GetType().Name.Contains("PlayerInteractor"));
             var input = interactor == null ? null : ReadMember(interactor, "_input", "Input");
-            if (input != null)
-            {
-                ConsumeRangeRelease(input);
-                ConsumeInstantBurstRelease(input);
-            }
             if (interactor == null || input == null || !IsInputActionPressed(input, "InteractAction") ||
                 !TrainerPlugin.Settings.ExpandCarry || TrainerPlugin.Settings.RestoreRequested ||
                 FindCurrentCarryLevel() < PickupFinalLevel || !IsHeldInputContextAllowed(input, interactor))
@@ -2928,31 +3249,13 @@ namespace BunkerTidyUp.Mod
             if (position == default(Vector3)) position = transform.position;
 
             var carryLevel = FindCurrentCarryLevel();
-            if (carryLevel >= ExpandedCarryMaximum)
-            {
-                if (IsRangeBatch) return new ClickContext();
-                if (_rangePressSuppressedUntilRelease) return new ClickContext();
-                EnsureInstantBurstPress(input);
-                return new ClickContext
-                {
-                    Enabled = true,
-                    BlockOriginal = _instantBurstConsumed,
-                    InstantBurst = !_instantBurstConsumed,
-                    TargetPosition = position,
-                    Interactor = interactor
-                };
-            }
-
-            if (_rangePressSuppressedUntilRelease || !EnsureRangePress(input, interactor, FindCurrentCarryLevel())) return new ClickContext();
-            var context = new ClickContext
+            if (_rangePressSuppressedUntilRelease || !EnsureRangePress(input, interactor, carryLevel)) return new ClickContext();
+            return new ClickContext
             {
                 Enabled = true,
                 TargetPosition = position,
                 Interactor = interactor
             };
-            if (_rangePressCount >= _rangePressLimit || (!IsRangeBatch && _rangePressCount > 0 && Time.realtimeSinceStartup < _nextRangePickupAt))
-                context.BlockOriginal = true;
-            return context;
         }
 
         private static void ConsumeRangeRelease(object input)
@@ -2964,26 +3267,6 @@ namespace BunkerTidyUp.Mod
             StopRangePress(false);
         }
 
-        private static void ConsumeInstantBurstRelease(object input)
-        {
-            if (!IsInputActionReleasedThisFrame(input, "InteractAction")) return;
-            if (ReferenceEquals(_instantBurstReleaseConsumedInput, input) && _instantBurstReleaseConsumedFrame == Time.frameCount) return;
-            _instantBurstReleaseConsumedInput = input;
-            _instantBurstReleaseConsumedFrame = Time.frameCount;
-            _instantBurstInput = input;
-            _instantBurstSlot = GetSaveSlot();
-            _instantBurstConsumed = false;
-        }
-
-        private static void EnsureInstantBurstPress(object input)
-        {
-            var slot = GetSaveSlot();
-            if (ReferenceEquals(_instantBurstInput, input) && _instantBurstSlot == slot) return;
-            _instantBurstInput = input;
-            _instantBurstSlot = slot;
-            _instantBurstConsumed = false;
-        }
-
         internal static void EndClick(object item, object[] args, bool originalSucceeded, ClickContext context)
         {
             if (!originalSucceeded || !context.Enabled || context.Interactor == null) return;
@@ -2993,47 +3276,13 @@ namespace BunkerTidyUp.Mod
                 !IsHeldInputContextAllowed(input, context.Interactor)) return;
 
             var carryLevel = FindCurrentCarryLevel();
-            if (context.InstantBurst && carryLevel >= ExpandedCarryMaximum)
-            {
-                EnsureInstantBurstPress(input);
-                _instantBurstConsumed = true;
-                RunInstantRangePickupBatch(context.Interactor, context.TargetPosition, item);
-                return;
-            }
-
-            if (carryLevel < PickupFinalLevel || carryLevel >= ExpandedCarryMaximum || _rangePressSuppressedUntilRelease || !EnsureRangePress(input, context.Interactor, carryLevel)) return;
+            if (carryLevel < PickupFinalLevel || _rangePressSuppressedUntilRelease || !EnsureRangePress(input, context.Interactor, carryLevel)) return;
             var id = InstanceId(item);
             if (id != 0 && RangePressCountedItems.Add(id))
             {
-                _rangePressCount = Math.Min(_rangePressLimit, _rangePressCount + 1);
+                _rangePressCount++;
                 _lastRangePickupInterval = GetRangePickupInterval(carryLevel);
-                _nextRangePickupAt = Time.realtimeSinceStartup + _lastRangePickupInterval;
-            }
-        }
-
-        private static void RunInstantRangePickupBatch(object interactor, Vector3 aimPoint, object clickedItem)
-        {
-            const int maximumPerClick = 10;
-            RangePressAttemptedItems.Clear();
-            var clickedId = InstanceId(clickedItem);
-            if (clickedId != 0) RangePressAttemptedItems.Add(clickedId);
-            var pickedCount = 1;
-            var nearbyCandidates = FindNearbyRangeCandidates(interactor, aimPoint);
-            IsRangeBatch = true;
-            try
-            {
-                while (pickedCount < maximumPerClick && HasCapacity(interactor) &&
-                    TryFindNearestRangeItem(interactor, aimPoint, nearbyCandidates, out var candidate, out var candidateId))
-                {
-                    if (!RangePressAttemptedItems.Add(candidateId)) break;
-                    if (!TryPick(interactor, candidate) || !IsPicked(candidate)) break;
-                    pickedCount++;
-                }
-            }
-            finally
-            {
-                IsRangeBatch = false;
-                RangePressAttemptedItems.Clear();
+                _nextRangePickupAt = Time.realtimeSinceStartupAsDouble + _lastRangePickupInterval;
             }
         }
 
@@ -3048,17 +3297,10 @@ namespace BunkerTidyUp.Mod
             _rangePressInput = input;
             _rangePressInteractor = interactor;
             _rangePressCount = 0;
-            _rangePressLimit = GetRangeHoldLimit(carryLevel);
             _lastRangePickupInterval = GetRangePickupInterval(carryLevel);
-            _nextRangePickupAt = Time.realtimeSinceStartup + _lastRangePickupInterval;
+            _nextRangePickupAt = Time.realtimeSinceStartupAsDouble + _lastRangePickupInterval;
             _rangeSlot = slot;
             return true;
-        }
-
-        private static int GetRangeHoldLimit(int carryLevel)
-        {
-            if (carryLevel <= 15) return 5;
-            return Math.Min(30, (carryLevel - 14) * 5);
         }
 
         private static bool TryFindNearestRangeItem(object interactor, Vector3 aimPoint, out object item, out int itemId)
@@ -3074,30 +3316,6 @@ namespace BunkerTidyUp.Mod
             }
             catch { return false; }
             return TryFindNearestRangeItem(interactor, aimPoint, candidates, out item, out itemId);
-        }
-
-        private static UnityEngine.Object[] FindNearbyRangeCandidates(object interactor, Vector3 aimPoint)
-        {
-            var itemType = FindGameType("PickableItem");
-            var playerTransform = GetTransform(interactor);
-            if (itemType == null || playerTransform == null) return Array.Empty<UnityEngine.Object>();
-            UnityEngine.Object[] all;
-            try { all = UnityEngine.Object.FindObjectsByType(itemType, FindObjectsSortMode.None); }
-            catch { return Array.Empty<UnityEngine.Object>(); }
-
-            var nearby = new List<UnityEngine.Object>();
-            foreach (var candidate in all)
-            {
-                if (!IsCandidateAlive(candidate)) continue;
-                var transform = GetTransform(candidate);
-                if (transform == null || transform.IsChildOf(playerTransform) || IsInsideShelf(transform) || IsPicked(candidate)) continue;
-                var id = InstanceId(candidate);
-                if (id == 0 || (TrainerPlugin.TestMode && _testRangeCandidateIds != null && !_testRangeCandidateIds.Contains(id))) continue;
-                var position = transform.position;
-                if (Vector3.Distance(aimPoint, position) > RangePickupRadius || Math.Abs(position.y - aimPoint.y) > 0.75f) continue;
-                nearby.Add(candidate);
-            }
-            return nearby.ToArray();
         }
 
         private static bool TryFindNearestRangeItem(object interactor, Vector3 aimPoint, UnityEngine.Object[] candidates, out object item, out int itemId)
@@ -3205,7 +3423,6 @@ namespace BunkerTidyUp.Mod
             _rangePressInput = null;
             _rangePressInteractor = null;
             _rangePressCount = 0;
-            _rangePressLimit = 0;
             _nextRangePickupAt = 0f;
             _rangeSlot = -1;
             RangePressCountedItems.Clear();
