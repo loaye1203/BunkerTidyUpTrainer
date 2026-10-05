@@ -17,13 +17,13 @@ if (-not [string]::IsNullOrWhiteSpace($BepInExArchive)) { $buildArgs.BepInExArch
 & (Join-Path $PSScriptRoot 'Build.ps1') @buildArgs
 if ($LASTEXITCODE -ne 0) { throw '源代码构建失败。' }
 
-$outputRoot = Join-Path $repoRoot '.artifacts\release\v1.0.2'
+$outputRoot = Join-Path $repoRoot '.artifacts\release\v1.0.3'
 & (Join-Path $PSScriptRoot 'Package-Release.ps1') -OutputRoot $outputRoot
 if ($LASTEXITCODE -ne 0) { throw '便携包打包失败。' }
-& (Join-Path $PSScriptRoot 'Build-Installer.ps1') -OutputPath (Join-Path $outputRoot 'BunkerTidyUpTrainer-1.0.2-Setup.exe')
+& (Join-Path $PSScriptRoot 'Build-Installer.ps1') -OutputPath (Join-Path $outputRoot 'BunkerTidyUpTrainer-1.0.3-Setup.exe')
 if ($LASTEXITCODE -ne 0) { throw '安装程序构建失败。' }
 
-$assets = @('BunkerTidyUpTrainer-1.0.2-Setup.exe', 'BunkerTidyUpTrainer-1.0.2-Portable.zip')
+$assets = @('BunkerTidyUpTrainer-1.0.3-Setup.exe', 'BunkerTidyUpTrainer-1.0.3-Portable.zip')
 $sumLines = foreach ($name in $assets) {
     $path = Join-Path $outputRoot $name
     if (-not (Test-Path -LiteralPath $path -PathType Leaf)) { throw ('发行资产缺失：' + $name) }
@@ -34,8 +34,8 @@ $sumLines | Set-Content -LiteralPath (Join-Path $outputRoot 'SHA256SUMS.txt') -E
 $metadataPath = Join-Path $outputRoot 'release-metadata.json'
 $manifest = [ordered]@{
     product = 'Bunker Tidy Up Trainer'
-    version = '1.0.2'
-    tag = 'v1.0.2'
+    version = '1.0.3'
+    tag = 'v1.0.3'
     assets = @(
         foreach ($name in $assets) {
             $path = Join-Path $outputRoot $name
@@ -44,4 +44,4 @@ $manifest = [ordered]@{
     )
 }
 $manifest | ConvertTo-Json -Depth 6 | Set-Content -LiteralPath $metadataPath -Encoding UTF8
-Write-Host ('公开版 1.0.2 已准备：' + $outputRoot)
+Write-Host ('公开版 1.0.3 已准备：' + $outputRoot)

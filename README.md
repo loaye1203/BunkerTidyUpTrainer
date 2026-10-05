@@ -1,13 +1,13 @@
 # Bunker Tidy Up 游戏增强工具
 
-**当前版本：1.0.2 · Windows x64 · 简体中文**
+**当前版本：1.0.3 · Windows x64 · 简体中文**
 
 本工具为 Bunker Tidy Up 提供自动加载的 Unity Mono 插件和桌面控制器。首次安装时所有功能均关闭；安装完成后可以关闭控制器，插件会随游戏自动运行。
 
 | 直接下载 | 文件 |
 | --- | --- |
-| [Windows 安装程序](https://github.com/loaye1203/BunkerTidyUpTrainer/releases/download/v1.0.2/BunkerTidyUpTrainer-1.0.2-Setup.exe) | 将桌面控制器安装到当前 Windows 用户目录，并可立即启动控制器 |
-| [便携 ZIP](https://github.com/loaye1203/BunkerTidyUpTrainer/releases/download/v1.0.2/BunkerTidyUpTrainer-1.0.2-Portable.zip) | 解压后运行控制器，不写入 Windows 安装目录 |
+| [Windows 安装程序](https://github.com/loaye1203/BunkerTidyUpTrainer/releases/download/v1.0.3/BunkerTidyUpTrainer-1.0.3-Setup.exe) | 将桌面控制器安装到当前 Windows 用户目录，并可立即启动控制器 |
+| [便携 ZIP](https://github.com/loaye1203/BunkerTidyUpTrainer/releases/download/v1.0.3/BunkerTidyUpTrainer-1.0.3-Portable.zip) | 解压后运行控制器，不写入 Windows 安装目录 |
 
 安装程序和便携包都包含控制器、游戏插件、BepInEx 运行文件、许可文本和验证报告。控制器采用 .NET 10 自包含发布，玩家无需另装 .NET。安装程序只安装桌面工具；它不会在安装时自动改动游戏目录。请在控制器中选中游戏根目录，确认游戏已经退出，再点击“安装 / 检查”来部署插件。
 
@@ -17,11 +17,21 @@
 
 1. 下载并运行 Windows 安装程序；或将便携 ZIP 解压到可写目录。
 2. 启动 `BunkerTidyUpTrainer.exe`，在“游戏路径”处选择包含 `Bunker.exe` 的游戏根目录。
-3. 确认 Bunker Tidy Up 已完全退出，点击“安装 / 检查”。本工具会先备份玩家存档和需要写入或替换的文件，并检查游戏是否正在运行。若检测到其他 Mod 加载器或启动代理，本工具会拒绝覆盖。
+3. 确认 Bunker Tidy Up 已完全退出，点击“安装 / 检查”。本工具会自动识别兼容加载器或本工具残留、备份存档和配置、补齐缺失文件并重建安装记录；只有无法确认兼容的组件或已修改的文件才会阻止安装。
 4. 启动游戏。状态面板显示新鲜插件回执后，修改器已经自动生效；之后无需让控制器常驻。
 5. 首次安装时八个开关均关闭，无限星星按钮也处于关闭状态。按需开启功能。
 
 便携 ZIP 与安装程序使用同一 Payload。首次安装结束后，控制器只保存所选游戏路径；配置保存在游戏的 `BepInEx/config/BunkerTidyUpTrainer/`。插件自动加载，不依赖桌面程序是否打开。
+
+## 遇到已有 winhttp.dll 时
+
+1.0.3 不再仅凭 `winhttp.dll` 的文件名拒绝安装。玩家无需删除 DLL、找文件属性或重装游戏，退出游戏后点击“安装 / 检查”即可。
+
+控制器按文件内容识别当前发行包对应的原样 Unity Doorstop 4.5.0/BepInEx 5.4.23.5，以及已公开的 1.0.0–1.0.2 本工具插件。只剩启动 DLL、手动复制过 Payload、安装记录丢失或损坏时，可以补齐文件并自动重建记录；已有 `settings.json` 和扩展等级侧档保留，替换前的文件与配置会备份。
+
+已有同版本加载器时，其他插件保持原样。兼容的 Doorstop 配置也保留；若其预加载入口正确但 `enabled=false`，会备份后只启用入口，不重置其他设置。复用的加载器按共享文件处理，移除本工具后恢复其安装前状态，不删除其他模组；识别到的本工具旧插件会移除，不会在卸载时重新恢复旧插件。
+
+其他版本或修改过的代理、MelonLoader、其他预加载入口及特殊启动配置不在自动接管范围，控制器仍保留原文件并明确提示。文件级兼容识别不代表任意其他模组的游戏行为都已验证。
 
 ## 主界面功能
 
@@ -94,9 +104,9 @@
 
 ## 兼容、验证范围与已知限制
 
-此版本针对 Windows x64、Bunker Tidy Up Unity 6000.0.59f2 Mono，使用 BepInEx 5.4.23.5。其他游戏版本、IL2CPP 版本及其他加载器共存情况没有验证；检测到已有启动代理时安装器会拒绝覆盖。不要将本工具的插件文件安装到其他游戏。
+此版本针对 Windows x64、Bunker Tidy Up Unity 6000.0.59f2 Mono，使用 BepInEx 5.4.23.5。兼容加载器的识别、文件保留和安装修复经过文件管理测试；其他模组的游戏内行为、其他游戏版本及 IL2CPP 未验证。不要将本工具的插件文件安装到其他游戏。
 
-验证报告：[1.0.2 验证报告](docs/验证报告-1.0.2.md)；1.0.0 和 1.0.1 历史报告均保留。本版针对 Carry 16、旧 Carry 21 侧档迁移、真实 Unity InputSystem 输入事件路径和 1.0.1 安装器升级做隔离验证；测试使用虚拟键盘事件、测试瞄准点夹具并调用游戏原接口，没有把物理键鼠映射或真实玩家存档试玩描述为已测。更多星星验证范围见本版报告。
+验证报告：[1.0.3 验证报告](docs/验证报告-1.0.3.md)。本版测试自动修复、共享加载器保留、旧发行插件接管、正常移除及未知组件拒绝覆盖；所有测试使用工作区内文件夹夹具，没有启动玩家游戏或编辑真实玩家存档。[1.0.2 验证报告](docs/验证报告-1.0.2.md) 保留携带迁移与虚拟输入的游戏内验证结果，1.0.0/1.0.1 历史报告也保留；本版游戏玩法和数值未改。
 
 安装器部署时不直接编辑玩家存档；游戏仍通过原版保存流程写入主存档，超出原版等级的扩展记录单独保存在插件侧档。安装器会备份需要触碰的游戏文件；测试和安装回执不能替代自行备份重要存档。工具不会修改 `Bunker.dll` 或 Unity 游戏程序集。
 
@@ -113,6 +123,12 @@ cd BunkerTidyUpTrainer
 ```
 
 构建脚本从 BepInEx 官方发布页取固定的 5.4.23.5 Windows x64 包，并校验 SHA-256；Unity API 引用可从 `-GamePath` 的 `Bunker_Data\Managed` 读取，或用 `-UnityVersion 6000.0.59` 下载官方编译引用。依赖缓存、构建输出和 NuGet 缓存都放在本地 `.artifacts/`，不会提交进源码仓库。也可传入 `-BepInExArchive <本地压缩包路径>` 使用已下载且哈希匹配的同版本官方压缩包。输出包括插件/控制器、便携 ZIP 和自解压 Windows 安装程序。
+
+发行包构建完成后，可运行安装恢复测试（不启动游戏）：
+
+```powershell
+dotnet run --project tests/Trainer.Installation.Tests/Trainer.Installation.Tests.csproj --configuration Release -- .artifacts/release/v1.0.3/portable/Payload .
+```
 
 源码目录：
 

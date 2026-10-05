@@ -1,4 +1,4 @@
-name: Build and publish v1.0.2
+name: Build and publish v1.0.3
 
 on:
   push:
@@ -10,7 +10,7 @@ permissions:
   contents: write
 
 concurrency:
-  group: bunker-tidy-up-trainer-v1.0.2-release
+  group: bunker-tidy-up-trainer-v1.0.3-release
   cancel-in-progress: false
 
 jobs:
@@ -29,22 +29,26 @@ jobs:
         shell: pwsh
         run: .\scripts\Build-Release.ps1 -UnityVersion 6000.0.59
 
+      - name: Test automatic installation recovery
+        shell: pwsh
+        run: dotnet run --project tests/Trainer.Installation.Tests/Trainer.Installation.Tests.csproj --configuration Release -- .artifacts/release/v1.0.3/portable/Payload .
+
       - name: Create release if it does not exist
         shell: pwsh
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          $tag = 'v1.0.2'
+          $tag = 'v1.0.3'
           gh release view $tag --repo $env:GITHUB_REPOSITORY 2>$null
           if ($LASTEXITCODE -eq 0) {
             Write-Host "Release $tag already exists; refusing to replace or upload over it."
             exit 0
           }
 
-          $releaseDir = Join-Path $env:GITHUB_WORKSPACE '.artifacts\release\v1.0.2'
+          $releaseDir = Join-Path $env:GITHUB_WORKSPACE '.artifacts\release\v1.0.3'
           $assets = @(
-            (Join-Path $releaseDir 'BunkerTidyUpTrainer-1.0.2-Setup.exe'),
-            (Join-Path $releaseDir 'BunkerTidyUpTrainer-1.0.2-Portable.zip'),
+            (Join-Path $releaseDir 'BunkerTidyUpTrainer-1.0.3-Setup.exe'),
+            (Join-Path $releaseDir 'BunkerTidyUpTrainer-1.0.3-Portable.zip'),
             (Join-Path $releaseDir 'SHA256SUMS.txt'),
             (Join-Path $releaseDir 'release-metadata.json')
           )
@@ -52,5 +56,5 @@ jobs:
             if (-not (Test-Path -LiteralPath $asset -PathType Leaf)) { throw "Missing release asset: $asset" }
           }
           gh release create $tag @assets --repo $env:GITHUB_REPOSITORY --target $env:GITHUB_SHA `
-            --title 'Bunker Tidy Up Trainer 1.0.2' --notes-file (Join-Path $env:GITHUB_WORKSPACE 'docs\release-notes-1.0.2.md')
+            --title 'Bunker Tidy Up Trainer 1.0.3' --notes-file (Join-Path $env:GITHUB_WORKSPACE 'docs\release-notes-1.0.3.md')
           if ($LASTEXITCODE -ne 0) { throw 'GitHub Release creation failed.' }

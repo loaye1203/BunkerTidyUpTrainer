@@ -100,18 +100,18 @@ try {
     $controllerProject = Join-Path $repoRoot 'src\Trainer.Controller\Trainer.Controller.csproj'
     $pluginProject = Join-Path $repoRoot 'src\BunkerTidyUp.Mod\BunkerTidyUp.Mod.csproj'
 
-    & $dotnetPath restore $controllerProject --runtime win-x64 -p:Version=1.0.2
+    & $dotnetPath restore $controllerProject --runtime win-x64 -p:Version=1.0.3
     if ($LASTEXITCODE -ne 0) { throw 'Controller NuGet restore 失败。' }
     & $dotnetPath publish $controllerProject --no-restore --configuration Release --runtime win-x64 --self-contained true `
         -p:PublishSingleFile=true -p:IncludeNativeLibrariesForSelfExtract=true -p:EnableCompressionInSingleFile=true `
-        -p:PublishTrimmed=false -p:Version=1.0.2 -p:AssemblyVersion=1.0.2.0 -p:FileVersion=1.0.2.0 `
+        -p:PublishTrimmed=false -p:Version=1.0.3 -p:AssemblyVersion=1.0.3.0 -p:FileVersion=1.0.3.0 `
         --output $controllerOutput
     if ($LASTEXITCODE -ne 0) { throw 'Windows x64 控制器发布失败。' }
 
-    & $dotnetPath restore $pluginProject (('-p:BepInExCoreDir=' + $bepCore)) (('-p:UnityManagedDir=' + $unityManagedDir)) -p:Version=1.0.2
+    & $dotnetPath restore $pluginProject (('-p:BepInExCoreDir=' + $bepCore)) (('-p:UnityManagedDir=' + $unityManagedDir)) -p:Version=1.0.3
     if ($LASTEXITCODE -ne 0) { throw '游戏插件 NuGet restore 失败。' }
     & $dotnetPath build $pluginProject --no-restore --configuration Release (('-p:BepInExCoreDir=' + $bepCore)) `
-        (('-p:UnityManagedDir=' + $unityManagedDir)) -p:Version=1.0.2 -p:AssemblyVersion=1.0.2.0 -p:FileVersion=1.0.2.0 `
+        (('-p:UnityManagedDir=' + $unityManagedDir)) -p:Version=1.0.3 -p:AssemblyVersion=1.0.3.0 -p:FileVersion=1.0.3.0 `
         --output $pluginOutput
     if ($LASTEXITCODE -ne 0) { throw '游戏插件构建失败。' }
     foreach ($file in @('BunkerTidyUp.Mod.dll', 'Trainer.Shared.dll')) {

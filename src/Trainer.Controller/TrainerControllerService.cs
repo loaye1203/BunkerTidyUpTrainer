@@ -19,6 +19,7 @@ namespace BunkerTidyUpTrainer.Controller
         public bool InstallComplete { get; set; }
         public List<string> Files { get; set; } = new List<string>();
         public List<string> OriginalFiles { get; set; } = new List<string>();
+        public List<string> RetiredPluginFiles { get; set; } = new List<string>();
         public Dictionary<string, string> InstalledHashes { get; set; } = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
     }
 
@@ -27,13 +28,19 @@ namespace BunkerTidyUpTrainer.Controller
         private static readonly JsonSerializerOptions JsonOptions = new JsonSerializerOptions { WriteIndented = true };
         private readonly string? _saveRootOverride;
         private readonly string? _dataRootOverride;
+        private readonly string? _payloadRootOverride;
+        private string PayloadRoot => _payloadRootOverride ?? Path.Combine(AppContext.BaseDirectory, "Payload");
 
         public TrainerControllerService() { }
 
         internal TrainerControllerService(string? saveRootOverride, string? dataRootOverride)
+            : this(saveRootOverride, dataRootOverride, null) { }
+
+        internal TrainerControllerService(string? saveRootOverride, string? dataRootOverride, string? payloadRootOverride)
         {
             _saveRootOverride = string.IsNullOrWhiteSpace(saveRootOverride) ? null : Path.GetFullPath(saveRootOverride);
             _dataRootOverride = string.IsNullOrWhiteSpace(dataRootOverride) ? null : Path.GetFullPath(dataRootOverride);
+            _payloadRootOverride = string.IsNullOrWhiteSpace(payloadRootOverride) ? null : Path.GetFullPath(payloadRootOverride);
         }
 
         public string RootDataDirectory(string gameRoot) => Path.Combine(
@@ -51,8 +58,13 @@ namespace BunkerTidyUpTrainer.Controller
         {
             var manifestPath = ManifestPath(gameRoot);
             if (!File.Exists(manifestPath)) return false;
-            var manifest = ReadManifest(manifestPath);
-            return manifest.InstallComplete && string.Equals(Path.GetFullPath(manifest.GameRoot), Path.GetFullPath(gameRoot), StringComparison.OrdinalIgnoreCase);
+            try
+            {
+                var manifest = ReadManifest(manifestPath);
+                return manifest.InstallComplete && string.Equals(NormalizeRoot(manifest.GameRoot), NormalizeRoot(gameRoot), StringComparison.OrdinalIgnoreCase);
+            }
+            catch (JsonException) { return false; }
+            catch (InvalidDataException) { return false; }
         }
 
         public string Install(string gameRoot)
@@ -62,29 +74,37 @@ namespace BunkerTidyUpTrainer.Controller
             var manifestPath = ManifestPath(gameRoot);
             if (File.Exists(manifestPath))
             {
-                var existing = ReadManifest(manifestPath);
-                if (!string.Equals(Path.GetFullPath(existing.GameRoot), gameRoot, StringComparison.OrdinalIgnoreCase))
+                InstallManifest? existing;
+                try { existing = ReadManifest(manifestPath); }
+                catch (JsonException) { existing = null; }
+                catch (InvalidDataException) { existing = null; }
+                if (existing != null && !string.Equals(NormalizeRoot(existing.GameRoot), gameRoot, StringComparison.OrdinalIgnoreCase))
                     throw new InvalidOperationException("现有安装清单指向另一个游戏目录；本次未修改文件。");
-                if (existing.InstallComplete)
+                if (existing != null && existing.InstallComplete)
                 {
                     return RepairCompletedInstall(gameRoot, existing);
                 }
-                RollbackInstall(gameRoot, existing);
-                File.Delete(manifestPath);
+                if (existing != null)
+                {
+                    RollbackInstall(gameRoot, existing);
+                    File.Delete(manifestPath);
+                }
             }
 
-            RefuseExistingLoader(gameRoot);
-
-            var payload = Path.Combine(AppContext.BaseDirectory, "Payload");
+            var payload = PayloadRoot;
             var payloadFiles = Directory.Exists(payload) ? Directory.GetFiles(payload, "*", SearchOption.AllDirectories) : Array.Empty<string>();
             if (!payloadFiles.Any(path => Path.GetFileName(path).Equals("winhttp.dll", StringComparison.OrdinalIgnoreCase)) ||
                 !payloadFiles.Any(path => path.EndsWith(Path.Combine("plugins", "BunkerTidyUpTrainer", "BunkerTidyUp.Mod.dll"), StringComparison.OrdinalIgnoreCase)) ||
                 !payloadFiles.Any(path => path.EndsWith(Path.Combine("plugins", "BunkerTidyUpTrainer", "Trainer.Shared.dll"), StringComparison.OrdinalIgnoreCase)))
                 throw new InvalidOperationException("便携包缺少 BepInEx 启动文件或修改器插件文件；请重新解压完整发行包。");
 
+            var recovery = LoaderRecoveryPlan.Inspect(gameRoot, Path.GetFullPath(payload), payloadFiles);
+
             var backupRoot = Path.Combine(RootDataDirectory(gameRoot), "backups", "install-" + DateTime.UtcNow.ToString("yyyyMMdd-HHmmss-fff") + "-" + Guid.NewGuid().ToString("N"));
             Directory.CreateDirectory(backupRoot);
             BackupUserSaves(gameRoot, Path.Combine(backupRoot, "player-saves"));
+            if (Directory.Exists(PluginDataPath(gameRoot))) CopyDirectory(PluginDataPath(gameRoot), Path.Combine(backupRoot, "plugin-data"));
+            if (File.Exists(manifestPath)) File.Copy(manifestPath, Path.Combine(backupRoot, "previous-install-manifest.json"));
 
             var manifest = new InstallManifest { GameRoot = gameRoot, BackupRoot = backupRoot, InstalledUtc = DateTime.UtcNow.ToString("O") };
             WriteManifest(manifestPath, manifest);
@@ -102,10 +122,16 @@ namespace BunkerTidyUpTrainer.Controller
                         Directory.CreateDirectory(Path.GetDirectoryName(original)!);
                         File.Copy(target, original, true);
                         if (!manifest.OriginalFiles.Contains(relative, StringComparer.OrdinalIgnoreCase)) manifest.OriginalFiles.Add(relative);
+                        if (LoaderRecoveryPlan.IsTrainerPlugin(relative)) manifest.RetiredPluginFiles.Add(relative);
                     }
                     if (!manifest.Files.Contains(relative, StringComparer.OrdinalIgnoreCase)) manifest.Files.Add(relative);
                     WriteManifest(manifestPath, manifest);
-                    File.Copy(source, target, true);
+                    if (relative.Equals("doorstop_config.ini", StringComparison.OrdinalIgnoreCase) && File.Exists(target))
+                    {
+                        if (recovery.DoorstopConfiguration != null) File.WriteAllBytes(target, recovery.DoorstopConfiguration);
+                    }
+                    else if (!File.Exists(target) || !FileHash(target).Equals(FileHash(source), StringComparison.OrdinalIgnoreCase))
+                        File.Copy(source, target, true);
                     manifest.InstalledHashes[relative] = FileHash(target);
                     WriteManifest(manifestPath, manifest);
                 }
@@ -131,7 +157,9 @@ namespace BunkerTidyUpTrainer.Controller
                     throw new IOException("安装失败且自动回滚未能完成。清单和逐文件备份已保留在 " + backupRoot + "，请勿手动删除。回滚错误：" + rollbackError.Message, installError);
                 }
             }
-            return "安装完成。游戏本地存档与被覆盖的启动文件已备份；所有功能初始关闭。";
+            return recovery.HasExistingFiles
+                ? "已自动识别兼容加载器或本工具残留，补齐文件并重建安装记录；已有配置已保留。可以直接启动游戏。"
+                : "安装完成。游戏本地存档与被覆盖的启动文件已备份；所有功能初始关闭。";
         }
 
         public void SaveSettings(string gameRoot, ModSettings settings, bool preserveRestoreRequest = false)
@@ -243,7 +271,7 @@ namespace BunkerTidyUpTrainer.Controller
         private static string ValidateGameRoot(string gameRoot)
         {
             if (string.IsNullOrWhiteSpace(gameRoot)) throw new InvalidOperationException("请先选择游戏安装目录。");
-            gameRoot = Path.GetFullPath(gameRoot.Trim());
+            gameRoot = NormalizeRoot(gameRoot.Trim());
             if (!File.Exists(Path.Combine(gameRoot, "Bunker.exe")) ||
                 !File.Exists(Path.Combine(gameRoot, "Bunker_Data", "Managed", "Bunker.dll")))
                 throw new InvalidOperationException("此目录没有找到 Bunker.exe 和 Bunker_Data\\Managed\\Bunker.dll。请选中游戏根目录。");
@@ -256,24 +284,6 @@ namespace BunkerTidyUpTrainer.Controller
             var target = Path.GetFullPath(Path.Combine(root, relative));
             if (!target.StartsWith(root, StringComparison.OrdinalIgnoreCase)) throw new InvalidOperationException("便携包包含越界路径：" + relative);
             return target;
-        }
-
-        private static void RefuseExistingLoader(string gameRoot)
-        {
-            var markers = new[]
-            {
-                Path.Combine(gameRoot, "MelonLoader"),
-                Path.Combine(gameRoot, "winhttp.dll"),
-                Path.Combine(gameRoot, "doorstop_config.ini"),
-                Path.Combine(gameRoot, "version.dll")
-            };
-            var existing = markers.FirstOrDefault(path => Directory.Exists(path) || File.Exists(path));
-            var bepinexCore = Path.Combine(gameRoot, "BepInEx", "core");
-            if (existing == null && Directory.Exists(bepinexCore) &&
-                (File.Exists(Path.Combine(bepinexCore, "BepInEx.Preloader.dll")) || File.Exists(Path.Combine(bepinexCore, "BepInEx.dll"))))
-                existing = bepinexCore;
-            if (existing != null)
-                throw new InvalidOperationException("检测到已有 mod 加载器或启动代理（" + Path.GetFileName(existing) + "）。为避免覆盖其他模组或启动配置，本工具不会替换它；游戏文件未修改。");
         }
 
         private static void RollbackInstall(string gameRoot, InstallManifest manifest)
@@ -297,7 +307,7 @@ namespace BunkerTidyUpTrainer.Controller
             foreach (var relative in manifest.Files)
             {
                 var target = SafeGamePath(gameRoot, relative);
-                var hasOriginal = manifest.OriginalFiles.Contains(relative, StringComparer.OrdinalIgnoreCase);
+                var hasOriginal = manifest.OriginalFiles.Contains(relative, StringComparer.OrdinalIgnoreCase) && !manifest.RetiredPluginFiles.Contains(relative, StringComparer.OrdinalIgnoreCase);
                 var original = Path.Combine(manifest.BackupRoot, "game-files", relative);
                 var expected = manifest.InstalledHashes.TryGetValue(relative, out var hash) ? hash : "";
                 if (hasOriginal && !File.Exists(original)) throw new IOException("找不到必须恢复的原文件备份：" + original);
@@ -311,7 +321,7 @@ namespace BunkerTidyUpTrainer.Controller
             foreach (var relative in manifest.Files.AsEnumerable().Reverse())
             {
                 var target = SafeGamePath(gameRoot, relative);
-                var hasOriginal = manifest.OriginalFiles.Contains(relative, StringComparer.OrdinalIgnoreCase);
+                var hasOriginal = manifest.OriginalFiles.Contains(relative, StringComparer.OrdinalIgnoreCase) && !manifest.RetiredPluginFiles.Contains(relative, StringComparer.OrdinalIgnoreCase);
                 if (hasOriginal)
                 {
                     var original = Path.Combine(manifest.BackupRoot, "game-files", relative);
@@ -344,7 +354,7 @@ namespace BunkerTidyUpTrainer.Controller
 
         private string RepairCompletedInstall(string gameRoot, InstallManifest manifest)
         {
-            var payloadRoot = Path.Combine(AppContext.BaseDirectory, "Payload");
+            var payloadRoot = PayloadRoot;
             var updates = new List<(string Relative, string Source, string Target, string SourceHash, bool WasMissing)>();
             foreach (var relative in manifest.Files)
             {
@@ -358,6 +368,8 @@ namespace BunkerTidyUpTrainer.Controller
                 {
                     if (!FileHash(target).Equals(expected, StringComparison.OrdinalIgnoreCase))
                         throw new InvalidOperationException("检测到安装文件已被修改；为保护改动，本次未覆盖任何文件：" + target);
+                    // Adopted loaders remain shared. Never reset their configuration on a repeat check.
+                    if (manifest.OriginalFiles.Contains(relative, StringComparer.OrdinalIgnoreCase) && !LoaderRecoveryPlan.IsTrainerPlugin(relative)) continue;
                     if (sourceHash.Equals(expected, StringComparison.OrdinalIgnoreCase)) continue;
                     updates.Add((relative, source, target, sourceHash, false));
                 }
@@ -514,11 +526,20 @@ namespace BunkerTidyUpTrainer.Controller
         private static string Identity(string gameRoot)
         {
             using var sha = SHA256.Create();
-            var bytes = sha.ComputeHash(Encoding.UTF8.GetBytes(Path.GetFullPath(gameRoot).ToUpperInvariant()));
+            var bytes = sha.ComputeHash(Encoding.UTF8.GetBytes(NormalizeRoot(gameRoot).ToUpperInvariant()));
             return BitConverter.ToString(bytes, 0, 8).Replace("-", "").ToLowerInvariant();
         }
 
-        private static InstallManifest ReadManifest(string path) => JsonSerializer.Deserialize<InstallManifest>(File.ReadAllText(path, Encoding.UTF8)) ?? throw new InvalidDataException("安装清单无法读取。");
+        private static InstallManifest ReadManifest(string path)
+        {
+            var manifest = JsonSerializer.Deserialize<InstallManifest>(File.ReadAllText(path, Encoding.UTF8));
+            if (manifest == null || string.IsNullOrWhiteSpace(manifest.GameRoot) || manifest.Files == null ||
+                manifest.OriginalFiles == null || manifest.InstalledHashes == null || manifest.RetiredPluginFiles == null ||
+                (manifest.InstallComplete && manifest.Files.Count == 0))
+                throw new InvalidDataException("安装清单无法读取。");
+            return manifest;
+        }
+        private static string NormalizeRoot(string path) => Path.TrimEndingDirectorySeparator(Path.GetFullPath(path));
 
         private static void WriteManifest(string path, InstallManifest manifest)
         {
