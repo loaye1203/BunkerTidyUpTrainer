@@ -58,10 +58,18 @@ namespace BunkerTidyUp.Mod
                             Patch(method, postfix: nameof(GetSaveDataPostfix));
                             Count("getSaveData");
                         }
-                        if (name == "loadfromsavedata" && (type.Namespace == "Bunker" || (type.Namespace != null && type.Namespace.StartsWith("Bunker.", StringComparison.Ordinal))))
+                        if (name == "loadfromsavedata" && !method.IsStatic && method.ReturnType == typeof(void) &&
+                            RuntimeBridge.IsLevelControllerType(type) &&
+                            method.GetParameters().Length == 1 && method.GetParameters()[0].ParameterType == typeof(Dictionary<string, int>))
                         {
                             Patch(method, prefix: nameof(LoadFromSaveDataPrefix), postfix: nameof(LoadFromSaveDataPostfix));
                             Count("loadSaveData");
+                        }
+                        if (type.FullName == "Bunker.Scoring.ShelfScoring" && name == "loadfromsavedata" &&
+                            !method.IsStatic && method.ReturnType == typeof(void) &&
+                            method.GetParameters().Length == 1 && method.GetParameters()[0].ParameterType == typeof(List<string>))
+                        {
+                            Patch(method, postfix: nameof(LoadFromSaveDataPostfix));
                         }
                         if (typeName == "savesystem" && name == "save" && typeof(Task).IsAssignableFrom(method.ReturnType))
                         {
@@ -245,16 +253,20 @@ namespace BunkerTidyUp.Mod
             RuntimeBridge.RecordSaveData(__instance, __result);
         }
 
-        private static void LoadFromSaveDataPrefix(object __instance, object[] __args)
+        private static void LoadFromSaveDataPrefix(object? __instance, object[] __args)
         {
+            if (__instance == null || !RuntimeBridge.IsLevelControllerType(__instance.GetType())) return;
             RuntimeBridge.ExtendController(__instance);
             RuntimeBridge.PrepareLoad(__instance, __args);
         }
 
-        private static void LoadFromSaveDataPostfix(object __instance)
+        private static void LoadFromSaveDataPostfix(object? __instance)
         {
+            if (__instance == null) return;
+            if (!RuntimeBridge.IsLevelControllerType(__instance.GetType()) &&
+                __instance.GetType().FullName != "Bunker.Scoring.ShelfScoring") return;
             RuntimeBridge.ApplyLevels();
-            if (__instance.GetType().Name == "ShelfScoring") RuntimeBridge.ApplyRewardValue(__instance);
+            if (__instance.GetType().FullName == "Bunker.Scoring.ShelfScoring") RuntimeBridge.ApplyRewardValue(__instance);
         }
 
         private static void SetLevelPrefix(object __instance, object[] __args)

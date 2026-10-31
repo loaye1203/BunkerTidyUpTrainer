@@ -8,7 +8,7 @@ param(
 
 $ErrorActionPreference = 'Stop'
 $repoRoot = [IO.Path]::GetFullPath((Join-Path $PSScriptRoot '..'))
-if ([string]::IsNullOrWhiteSpace($OutputRoot)) { $OutputRoot = Join-Path $repoRoot '.artifacts\release\v1.0.3' }
+if ([string]::IsNullOrWhiteSpace($OutputRoot)) { $OutputRoot = Join-Path $repoRoot '.artifacts\release\v1.0.4' }
 if ([string]::IsNullOrWhiteSpace($BuildRoot)) { $BuildRoot = Join-Path $repoRoot '.artifacts\build' }
 if ([string]::IsNullOrWhiteSpace($BepInExRoot)) { $BepInExRoot = Join-Path $repoRoot '.artifacts\cache\BepInEx-5.4.23.5' }
 if ([string]::IsNullOrWhiteSpace($DotNetLicenseRoot)) { $DotNetLicenseRoot = Join-Path $repoRoot '.artifacts\dotnet-licenses' }
@@ -47,8 +47,8 @@ Copy-Item -LiteralPath (Join-Path $pluginRoot 'Trainer.Shared.dll') -Destination
 Copy-Item -LiteralPath (Join-Path $repoRoot 'README.md') -Destination $portableStage
 Copy-Item -LiteralPath (Join-Path $repoRoot 'LICENSE') -Destination $portableStage
 Copy-Item -LiteralPath (Join-Path $repoRoot 'THIRD-PARTY-NOTICES.md') -Destination $portableStage
-Copy-Item -LiteralPath (Join-Path $repoRoot 'docs\验证报告-1.0.3.md') -Destination (Join-Path $portableStage '验证报告.md')
-Copy-Item -LiteralPath (Join-Path $repoRoot 'docs\release-notes-1.0.3.md') -Destination (Join-Path $portableStage '发行说明.md')
+Copy-Item -LiteralPath (Join-Path $repoRoot 'docs\验证报告-1.0.4.md') -Destination (Join-Path $portableStage '验证报告.md')
+Copy-Item -LiteralPath (Join-Path $repoRoot 'docs\release-notes-1.0.4.md') -Destination (Join-Path $portableStage '发行说明.md')
 $packageLicenses = Join-Path $portableStage 'licenses'
 $packageImage = Join-Path $portableStage 'docs\assets'
 New-Item -ItemType Directory -Force -Path $packageLicenses, $packageImage | Out-Null
@@ -57,10 +57,14 @@ Copy-Item -LiteralPath (Join-Path $DotNetLicenseRoot 'Microsoft-DotNet-LICENSE.t
 Copy-Item -LiteralPath (Join-Path $DotNetLicenseRoot 'Microsoft-DotNet-ThirdPartyNotices.txt') -Destination $packageLicenses -Force
 Copy-Item -LiteralPath (Join-Path $DotNetLicenseRoot 'Microsoft-WindowsDesktop-ThirdPartyNotices.txt') -Destination $packageLicenses -Force
 Copy-Item -LiteralPath (Join-Path $repoRoot 'docs\assets\trainer-ui.png') -Destination (Join-Path $packageImage 'trainer-ui.png')
+$packageDocs = Join-Path $portableStage 'docs'
+foreach ($document in @('功能参数.md', '验证报告-1.0.4.md', 'release-notes-1.0.4.md')) {
+    Copy-Item -LiteralPath (Join-Path (Join-Path $repoRoot 'docs') $document) -Destination $packageDocs
+}
 
 $metadata = [ordered]@{
     product = 'Bunker Tidy Up Trainer'
-    version = '1.0.3'
+    version = '1.0.4'
     platform = 'Windows x64'
     gameRuntime = 'Unity Mono 6000.0.59f2'
     loader = 'BepInEx 5.4.23.5'
@@ -69,7 +73,7 @@ $metadata = [ordered]@{
 }
 $metadata | ConvertTo-Json -Depth 4 | Set-Content -LiteralPath (Join-Path $portableStage 'release-metadata.json') -Encoding UTF8
 
-$archiveName = 'BunkerTidyUpTrainer-1.0.3-Portable.zip'
+$archiveName = 'BunkerTidyUpTrainer-1.0.4-Portable.zip'
 $archivePath = Join-Path $OutputRoot $archiveName
 Add-Type -AssemblyName System.IO.Compression
 $archiveStream = [IO.File]::Open($archivePath, [IO.FileMode]::CreateNew, [IO.FileAccess]::ReadWrite, [IO.FileShare]::None)

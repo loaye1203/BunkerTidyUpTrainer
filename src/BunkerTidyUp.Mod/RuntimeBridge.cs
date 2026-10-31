@@ -49,6 +49,7 @@ namespace BunkerTidyUp.Mod
         private static readonly Dictionary<string, int> BaseAbilityLimits = new Dictionary<string, int>(StringComparer.Ordinal);
         private static readonly Dictionary<string, int> BaseUpgradeLimits = new Dictionary<string, int>(StringComparer.Ordinal);
         private static readonly Dictionary<object, List<object>> OriginalLevelLists = new Dictionary<object, List<object>>(ReferenceComparer.Instance);
+        private static readonly Dictionary<string, int[]> TestOriginalPrices = new Dictionary<string, int[]>(StringComparer.Ordinal);
         private static readonly List<object> Controllers = new List<object>();
         private static readonly Dictionary<object, int> RewardSources = new Dictionary<object, int>(ReferenceComparer.Instance);
         private static readonly HashSet<int> RangePressCountedItems = new HashSet<int>();
@@ -121,6 +122,8 @@ namespace BunkerTidyUp.Mod
         private static object? _automatedMetadata;
         private static Task? _automatedSaveLoadTask;
         private static object? _automatedSaveModel;
+        private static string? _compatibilityNoteId;
+        private static bool _compatibilityNewGame;
         private static object? _rangeTestInteractor;
         private static object? _rangeTestHands;
         private static object? _rangeTestCarryUpgrade;
@@ -199,9 +202,9 @@ namespace BunkerTidyUp.Mod
         internal static void ConfigureAutomatedGameTest()
         {
             if (!TrainerPlugin.TestMode || !string.Equals(Environment.GetEnvironmentVariable("BUNKER_TIDY_UP_TEST_RUN_GAMEPLAY"), "1", StringComparison.Ordinal)) return;
-            if (!int.TryParse(Environment.GetEnvironmentVariable("BUNKER_TIDY_UP_TEST_PHASE"), out _automatedTestPhase) || (_automatedTestPhase != 1 && _automatedTestPhase != 2 && _automatedTestPhase != 3 && _automatedTestPhase != 4 && _automatedTestPhase != 5))
-                throw new InvalidOperationException("BUNKER_TIDY_UP_TEST_PHASE must be 1, 2, 3, 4, or 5");
-            if (_automatedTestPhase == 1 || _automatedTestPhase == 2)
+            if (!int.TryParse(Environment.GetEnvironmentVariable("BUNKER_TIDY_UP_TEST_PHASE"), out _automatedTestPhase) || _automatedTestPhase < 1 || _automatedTestPhase > 6)
+                throw new InvalidOperationException("BUNKER_TIDY_UP_TEST_PHASE must be between 1 and 6");
+            if (_automatedTestPhase == 1 || _automatedTestPhase == 2 || _automatedTestPhase == 6)
             {
                 _automatedTestRevisionBase = Math.Max(TrainerPlugin.Settings.Revision, TrainerPlugin.Status.SeenRevision) + 1;
                 var settings = new ModSettings
@@ -285,6 +288,7 @@ namespace BunkerTidyUp.Mod
                 else if (_automatedTestPhase == 2) ProcessAutomatedContinueTest();
                 else if (_automatedTestPhase == 3) ProcessAutomatedOverflowReloadTest();
                 else if (_automatedTestPhase == 4) ProcessAutomatedHeldInputTest();
+                else if (_automatedTestPhase == 6) ProcessAutomatedCompatibilityTest();
                 else ProcessAutomatedPullExpansionTest();
             }
             catch (Exception ex)
@@ -1324,6 +1328,111 @@ namespace BunkerTidyUp.Mod
             }
         }
 
+        private static void ProcessAutomatedCompatibilityTest()
+        {
+            if (_automatedTestStage == 0)
+            {
+                var menu = FindActiveGameComponent("MainMenu");
+                if (menu == null) return;
+                _compatibilityNewGame = !File.Exists(Path.Combine(GetSaveRoot(), "Save-" + AutomatedTestSlot + ".sav"));
+                InvokeMenuStart(menu, _compatibilityNewGame ? "OnPlayClicked" : "OnContinueClicked");
+                _automatedTestStage = 1;
+                return;
+            }
+            if (_automatedTestStage == 1)
+            {
+                var level = FindActiveGameComponent("Level");
+                if (level == null || GetSaveSlot() != AutomatedTestSlot || !_automatedInitializeSeen ||
+                    IsLevelLoading(level) || Time.realtimeSinceStartup - _automatedInitializeObservedAt < 2f) return;
+                _automatedTestLevel = level;
+                var objects = FindLevelObjects().ToDictionary(item => item.Owner.GetType().Name, item => item.Owner);
+                VerifyExpandedTables(objects);
+                foreach (var entry in TestOriginalPrices)
+                    VerifyOriginalPrices(objects, entry.Key, entry.Key.EndsWith("Ability", StringComparison.Ordinal) ? "_levels" : "_steps", entry.Value);
+                if (TestOriginalPrices.Count != 4) throw new InvalidDataException("Native mode prices were not captured before extension");
+                if (_compatibilityNewGame)
+                {
+                    PurchaseToLevel(objects, "ItemPullAbility", 15, true);
+                    PurchaseToLevel(objects, "ShelfScatterAbility", 6, true);
+                    PurchaseToLevel(objects, "HandCapacityUpgrade", ExpandedCarryMaximum, false);
+                    PurchaseToLevel(objects, "RepeatInteractUpgrade", 7, false);
+                }
+                VerifyCurrentGrades(objects, 15, 6, ExpandedCarryMaximum, 7);
+                var statistics = FindActiveGameComponent("PlayStatistics") ?? throw new InvalidOperationException("New game statistics are unavailable");
+                var restore = SafeMethods(statistics.GetType()).Single(method => method.Name == "LoadFromSaveData");
+                restore.Invoke(statistics, new object[] { new Dictionary<string, int> { ["ItemPullAbility"] = 17 }, 12.5f, 3 });
+                if (RealUpgrades.ContainsKey("ItemPullAbility")) throw new InvalidDataException("Ability-use statistics leaked into purchased upgrade levels");
+                var note = FindActiveGameComponent("NoteComputer") ?? throw new InvalidOperationException("The updated level has no note computer");
+                _compatibilityNoteId = ReadMember(note, "SaveId") as string;
+                if (string.IsNullOrEmpty(_compatibilityNoteId)) throw new InvalidDataException("Note computer has no save identity");
+                var restoreNotes = note.GetType().GetMethods(BindingFlags.Static | BindingFlags.Public | BindingFlags.NonPublic)
+                    .Single(method => method.Name == "LoadFromSaveData");
+                restoreNotes.Invoke(null, new object[] { new List<string> { _compatibilityNoteId! } });
+                if (!ReadBool(note, "IsRead")) throw new InvalidDataException("The game's static note restore did not mark the note read");
+                _automatedSaveSequenceBaseline = CompletedSaveSequence.TryGetValue(AutomatedTestSlot, out var sequence) ? sequence : 0;
+                SafeMethods(level.GetType()).Single(method => method.Name == "AutoSave" && method.GetParameters().Length == 0).Invoke(level, null);
+                _automatedTestStage = 2;
+                return;
+            }
+            if (_automatedTestStage == 2)
+            {
+                if (!CompletedSaveSequence.TryGetValue(AutomatedTestSlot, out var sequence) || sequence <= _automatedSaveSequenceBaseline) return;
+                VerifyCommittedProgressAndVanillaSave();
+                StartReadingSavedModel();
+                _automatedTestStage = 3;
+                return;
+            }
+            if (_automatedTestStage == 3)
+            {
+                if (_automatedSaveLoadTask == null || !_automatedSaveLoadTask.IsCompleted) return;
+                if (_automatedSaveLoadTask.IsFaulted) throw new IOException("Statistics/note save readback failed", _automatedSaveLoadTask.Exception);
+                var save = ReadTaskResult(_automatedSaveLoadTask) ?? throw new InvalidDataException("Save readback returned no model");
+                VerifyVanillaSaveGrades(save);
+                var uses = ReadMember(save, "AbilityUses") as IDictionary ?? throw new InvalidDataException("Save has no ability-use statistics");
+                if (!TryInt(uses["ItemPullAbility"], out var count) || count != 17 || ReadInt(save, "Jumps") != 3)
+                    throw new InvalidDataException("Statistics were changed by the level restore/save hooks");
+                VerifyCompatibilityNote(save);
+                TrainerPlugin.Log.LogInfo("New statistics and static note restoration survived a real AutoSave/Load without changing purchased grades.");
+                SafeMethods(_automatedTestLevel!.GetType()).Single(method => method.Name == "StartNewGamePlus" && method.GetParameters().Length == 0).Invoke(_automatedTestLevel, null);
+                _automatedTestStage = 4;
+                return;
+            }
+            if (_automatedTestStage == 4)
+            {
+                var level = FindActiveGameComponent("Level");
+                if (level == null || !ReadBool(level, "_isNewGamePlus") || IsLevelLoading(level) ||
+                    Time.realtimeSinceStartup - _automatedInitializeObservedAt < 2f) return;
+                VerifyCurrentGrades(FindLevelObjects().ToDictionary(item => item.Owner.GetType().Name, item => item.Owner), 15, 6, ExpandedCarryMaximum, 7);
+                if (ReadInt(GetPlayerWalletInstance()!, "Balance") != 0) throw new InvalidDataException("New Game+ did not reset points to zero");
+                if (RealUpgrades.ContainsKey("ItemPullAbility")) throw new InvalidDataException("New Game+ confused statistics with upgrade levels");
+                VerifyCommittedProgressAndVanillaSave();
+                StartReadingSavedModel();
+                _automatedTestStage = 5;
+                return;
+            }
+            if (_automatedTestStage == 5)
+            {
+                if (_automatedSaveLoadTask == null || !_automatedSaveLoadTask.IsCompleted) return;
+                if (_automatedSaveLoadTask.IsFaulted) throw new IOException("New Game+ save readback failed", _automatedSaveLoadTask.Exception);
+                var save = ReadTaskResult(_automatedSaveLoadTask) ?? throw new InvalidDataException("New Game+ readback returned no model");
+                var metadata = ReadMember(save, "Metadata") ?? throw new InvalidDataException("New Game+ save has no metadata");
+                if (!ReadBool(metadata, "IsNewGamePlus")) throw new InvalidDataException("New Game+ flag was not persisted");
+                var expectedMode = Environment.GetEnvironmentVariable("BUNKER_TIDY_UP_TEST_GAME_MODE") ?? "Full";
+                if (Convert.ToString(ReadMember(metadata, "Mode")) != expectedMode) throw new InvalidDataException("New Game+ changed the selected game mode");
+                VerifyCompatibilityNote(save);
+                VerifyVanillaSaveGrades(save);
+                VerifyCommittedProgressAndVanillaSave();
+                WriteAutomatedGameTestReport(true, "Build 26103693 " + expectedMode + " mode: native prices preserved and real extension grades applied; nonzero statistics and a real note survived AutoSave/Load; New Game+ restarted the level with extension grades and notes preserved, points reset to zero, and its mode/flag stored in the game's new save format.");
+            }
+        }
+
+        private static void VerifyCompatibilityNote(object save)
+        {
+            var notes = ReadMember(save, "ReadNotes") as IEnumerable ?? throw new InvalidDataException("Save has no read-note list");
+            if (!notes.Cast<object>().Any(note => Convert.ToString(note) == _compatibilityNoteId))
+                throw new InvalidDataException("The real note's read state did not survive saving");
+        }
+
         private static void ProcessAutomatedContinueTest()
         {
             if (_automatedTestStage == 0)
@@ -1697,9 +1806,26 @@ namespace BunkerTidyUp.Mod
 
         private static void InvokeMenuStart(object menu, string methodName)
         {
-            var method = SafeMethods(menu.GetType()).FirstOrDefault(candidate => candidate.Name == methodName && candidate.GetParameters().Length == 1 && candidate.GetParameters()[0].ParameterType == typeof(int));
+            var methods = SafeMethods(menu.GetType()).ToArray();
+            var modeType = FindGameType("GameMode");
+            var mode = modeType == null ? null : Enum.Parse(modeType,
+                Environment.GetEnvironmentVariable("BUNKER_TIDY_UP_TEST_GAME_MODE") ?? "Full");
+            var current = methods.FirstOrDefault(candidate => candidate.Name == methodName && candidate.GetParameters().Length == 2 &&
+                candidate.GetParameters()[0].ParameterType == typeof(int) && candidate.GetParameters()[1].ParameterType == modeType);
+            if (current != null)
+            {
+                current.Invoke(menu, new[] { (object)AutomatedTestSlot, mode! });
+                return;
+            }
+            var method = methods.FirstOrDefault(candidate => candidate.Name == methodName && candidate.GetParameters().Length == 1 && candidate.GetParameters()[0].ParameterType == typeof(int));
             if (method == null) throw new MissingMethodException(menu.GetType().FullName, methodName + "(Int32)");
             method.Invoke(menu, new object[] { AutomatedTestSlot });
+            if (methodName == "OnPlayClicked" && mode != null)
+            {
+                var chooseMode = methods.FirstOrDefault(candidate => candidate.Name == "OnModeSelected" && candidate.GetParameters().Length == 1 &&
+                    candidate.GetParameters()[0].ParameterType == modeType) ?? throw new MissingMethodException(menu.GetType().FullName, "OnModeSelected(GameMode)");
+                chooseMode.Invoke(menu, new[] { mode });
+            }
         }
 
         private static object? FindActiveGameComponent(string typeName)
@@ -1719,11 +1845,16 @@ namespace BunkerTidyUp.Mod
             var wallet = GetPlayerWalletInstance() ?? throw new InvalidOperationException("PlayerWallet.Instance is not ready");
             walletType.GetMethod("Add", BindingFlags.Instance | BindingFlags.Public)?.Invoke(wallet, new object[] { 1000000 });
             var methodName = ability ? "TryLevelUp" : "TryBuy";
-            var purchase = SafeMethods(owner.GetType()).FirstOrDefault(method => method.Name == methodName && method.GetParameters().Length == 1 && method.GetParameters()[0].ParameterType.IsInstanceOfType(wallet));
+            // UpgradeController applies the purchased effect; Upgrade.TryBuy alone only changes its grade.
+            var purchaseOwner = ability ? owner : Controllers.FirstOrDefault(controller => controller.GetType().FullName == "Bunker.Upgrades.UpgradeController" &&
+                Fields(controller.GetType()).Any(field => ReferenceEquals(SafeGet(field, controller), owner)))
+                ?? throw new InvalidOperationException("The original upgrade purchase controller was unavailable");
+            var argument = ability ? wallet : owner;
+            var purchase = SafeMethods(purchaseOwner.GetType()).FirstOrDefault(method => method.Name == methodName && method.GetParameters().Length == 1 && method.GetParameters()[0].ParameterType.IsInstanceOfType(argument));
             if (purchase == null) throw new MissingMethodException(owner.GetType().FullName, methodName);
             while (GetCurrentLevel(owner) < target)
             {
-                if (!(purchase.Invoke(owner, new[] { wallet }) is bool bought) || !bought)
+                if (!(purchase.Invoke(purchaseOwner, new[] { argument }) is bool bought) || !bought)
                     throw new InvalidOperationException("Game purchase was rejected for " + typeName + " at grade " + GetCurrentLevel(owner));
             }
         }
@@ -1998,21 +2129,33 @@ namespace BunkerTidyUp.Mod
                 .FirstOrDefault(candidate => candidate.Name == "GetSaveLocationFor" && candidate.GetParameters().Length == 1 && candidate.GetParameters()[0].ParameterType == typeof(int));
             var location = locationMethod?.Invoke(null, new object[] { AutomatedTestSlot }) as string;
             TrainerPlugin.Log.LogInfo("Test SaveSystem readback path=" + location + ", exists=" + (!string.IsNullOrEmpty(location) && File.Exists(location)) + ", saveRoot=" + GetSaveRoot() + ".");
-            var method = type.GetMethods(BindingFlags.Static | BindingFlags.Public | BindingFlags.NonPublic)
-                .FirstOrDefault(candidate => candidate.Name == "Load" && candidate.GetParameters().Length == 2 && candidate.GetParameters()[0].ParameterType == typeof(int));
-            if (method == null) throw new MissingMethodException(type.FullName, "Load(Int32, SaveMetadata)");
-            _automatedSaveLoadTask = method.Invoke(null, new object?[] { AutomatedTestSlot, null }) as Task ?? throw new InvalidOperationException("SaveSystem.Load did not return Task");
+            _automatedSaveLoadTask = LoadSavedModel(type, AutomatedTestSlot, null);
             TrainerPlugin.Log.LogInfo("Started SaveSystem.Load with embedded metadata parsing for slot " + AutomatedTestSlot + ".");
+        }
+
+        private static Task LoadSavedModel(Type saveSystem, int slot, object? metadata)
+        {
+            var methods = saveSystem.GetMethods(BindingFlags.Static | BindingFlags.Public | BindingFlags.NonPublic)
+                .Where(candidate => candidate.Name == "Load" && typeof(Task).IsAssignableFrom(candidate.ReturnType)).ToArray();
+            var current = methods.FirstOrDefault(candidate => candidate.GetParameters().Length == 1 &&
+                candidate.GetParameters()[0].ParameterType == typeof(int));
+            if (current != null)
+                return current.Invoke(null, new object[] { slot }) as Task ?? throw new InvalidOperationException("SaveSystem.Load did not return Task");
+            var legacy = methods.FirstOrDefault(candidate => candidate.GetParameters().Length == 2 &&
+                candidate.GetParameters()[0].ParameterType == typeof(int) &&
+                candidate.GetParameters()[1].ParameterType.FullName == "Bunker.SaveSystem.Models.SaveMetadata");
+            if (legacy == null) throw new MissingMethodException(saveSystem.FullName, "Load(Int32) or Load(Int32, SaveMetadata)");
+            return legacy.Invoke(null, new[] { (object)slot, metadata }) as Task ?? throw new InvalidOperationException("SaveSystem.Load did not return Task");
         }
 
         private static void VerifyVanillaSaveGrades(object save)
         {
             var abilities = ReadMember(save, "AbilityLevels", "abilityLevels") as IDictionary ?? throw new InvalidDataException("Loaded save has no AbilityLevels map");
             var upgrades = ReadMember(save, "UpgradeLevels", "upgradeLevels") as IDictionary ?? throw new InvalidDataException("Loaded save has no UpgradeLevels map");
-            VerifySavedGrade(abilities, "ItemPullAbility", 6);
-            VerifySavedGrade(abilities, "ShelfScatterAbility", 3);
-            VerifySavedGrade(upgrades, "HandCapacityUpgrade", 7);
-            VerifySavedGrade(upgrades, "RepeatInteractUpgrade", 5);
+            VerifySavedGrade(abilities, "ItemPullAbility", BaseAbilityLimits.TryGetValue("ItemPullAbility", out var pullLimit) ? pullLimit : 6);
+            VerifySavedGrade(abilities, "ShelfScatterAbility", BaseAbilityLimits.TryGetValue("ShelfScatterAbility", out var scatterLimit) ? scatterLimit : 3);
+            VerifySavedGrade(upgrades, "HandCapacityUpgrade", BaseUpgradeLimits.TryGetValue("HandCapacityUpgrade", out var carryLimit) ? carryLimit : 7);
+            VerifySavedGrade(upgrades, "RepeatInteractUpgrade", BaseUpgradeLimits.TryGetValue("RepeatInteractUpgrade", out var repeatLimit) ? repeatLimit : 5);
         }
 
         private static void VerifySavedGrade(IDictionary levels, string key, int vanillaMaximum)
@@ -2051,10 +2194,7 @@ namespace BunkerTidyUp.Mod
                 TrainerPlugin.Log.LogInfo("Test SaveSystem metadata result=" + metaDescription + ".");
             }
             var type = FindGameType("SaveSystem") ?? throw new InvalidOperationException("SaveSystem was not found");
-            var method = type.GetMethods(BindingFlags.Static | BindingFlags.Public | BindingFlags.NonPublic)
-                .FirstOrDefault(candidate => candidate.Name == "Load" && candidate.GetParameters().Length == 2 && candidate.GetParameters()[0].ParameterType == typeof(int));
-            if (method == null) throw new MissingMethodException(type.FullName, "Load(Int32, SaveMetadata)");
-            _automatedSaveLoadTask = method.Invoke(null, new[] { (object)AutomatedTestSlot, _automatedMetadata! }) as Task ?? throw new InvalidOperationException("SaveSystem.Load did not return Task");
+            _automatedSaveLoadTask = LoadSavedModel(type, AutomatedTestSlot, _automatedMetadata);
             _automatedMetadataTask = null;
         }
 
@@ -2088,8 +2228,12 @@ namespace BunkerTidyUp.Mod
             catch (Exception ex) { TrainerPlugin.Log.LogError("Could not write gameplay test report: " + ex); }
         }
 
-        internal static void ExtendController(object controller)
+        internal static bool IsLevelControllerType(Type type) =>
+            type.FullName == "Bunker.Abilities.AbilityController" || type.FullName == "Bunker.Upgrades.UpgradeController";
+
+        internal static void ExtendController(object? controller)
         {
+            if (controller == null || !IsLevelControllerType(controller.GetType())) return;
             if (!Controllers.Contains(controller, ReferenceComparer.Instance)) Controllers.Add(controller);
             var kind = controller.GetType().Name.ToLowerInvariant();
             var isAbilityController = kind.Contains("abilitycontroller");
@@ -2131,6 +2275,8 @@ namespace BunkerTidyUp.Mod
             {
                 original = list.Cast<object>().ToList();
                 OriginalLevelLists[owner] = original;
+                if (TrainerPlugin.TestMode)
+                    TestOriginalPrices[key] = original.Select(level => ReadInt(level, "Cost", "_cost")).ToArray();
                 (isAbility ? BaseAbilityLimits : BaseUpgradeLimits)[key] = original.Count;
             }
 
@@ -2324,8 +2470,9 @@ namespace BunkerTidyUp.Mod
             // Durable true levels change only after a successful purchase or an explicit load.
         }
 
-        internal static void PrepareLoad(object controller, object[] args)
+        internal static void PrepareLoad(object? controller, object[] args)
         {
+            if (controller == null || !IsLevelControllerType(controller.GetType())) return;
             var dictionary = args.FirstOrDefault(a => a is IDictionary) as IDictionary;
             if (dictionary == null) return;
             var slot = GetSaveSlot();
